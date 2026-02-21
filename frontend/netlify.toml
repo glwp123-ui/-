@@ -1,11 +1,10 @@
+[[plugins]]
+  package = "netlify-plugin-flutter"
+
 [build]
+  base = "frontend"
   command = "flutter build web --release --dart-define=API_BASE_URL=https://songwork-api.onrender.com"
-  publish = "build/web"
+  publish = "frontend/build/web"
 
 [build.environment]
-  FLUTTER_VERSION = "3.35.4"
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+  FLUTTER_VERSION = "stable"
