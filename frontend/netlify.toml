@@ -4,7 +4,7 @@
 [build]
   base = "frontend"
   command = "flutter build web --release --dart-define=API_BASE_URL=https://songwork-api.onrender.com"
-  publish = "frontend/build/web"
+  publish = "build/web"
 
 [build.environment]
   FLUTTER_VERSION = "stable"
