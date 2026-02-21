@@ -42,18 +42,37 @@ class SongWorkApp extends StatelessWidget {
   }
 }
 
-/// 로그인 상태에 따라 화면 분기
-class _RootRouter extends StatelessWidget {
+/// 로그인 상태에 따라 화면 분기 + 로그인 시 데이터 자동 새로고침
+class _RootRouter extends StatefulWidget {
   const _RootRouter();
 
   @override
+  State<_RootRouter> createState() => _RootRouterState();
+}
+
+class _RootRouterState extends State<_RootRouter> {
+  bool _wasLoggedIn = false;
+
+  @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
+    final auth    = context.watch<AuthProvider>();
+    final appProv = context.read<AppProvider>();
 
     if (auth.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
+    }
+
+    // 로그인 상태가 바뀐 순간(로그아웃→로그인) 데이터 자동 새로고침
+    if (auth.isLoggedIn && !_wasLoggedIn) {
+      _wasLoggedIn = true;
+      // 프레임 이후에 실행 (build 중 setState 방지)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        appProv.load();
+      });
+    } else if (!auth.isLoggedIn) {
+      _wasLoggedIn = false;
     }
 
     if (!auth.isLoggedIn) {

@@ -11,8 +11,60 @@ import '../screens/daily_report_screen.dart';
 import '../screens/user_manage_screen.dart';
 import 'dept_form_sheet.dart';
 
-class NotionSidebar extends StatelessWidget {
+class NotionSidebar extends StatefulWidget {
   const NotionSidebar({super.key});
+
+  @override
+  State<NotionSidebar> createState() => _NotionSidebarState();
+}
+
+class _NotionSidebarState extends State<NotionSidebar> {
+  bool _isSyncing = false;
+
+  Future<void> _syncData(BuildContext context) async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+    try {
+      await context.read<AppProvider>().load();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('데이터가 최신 상태로 동기화되었습니다.'),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0F7B6C),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('동기화에 실패했습니다. 다시 시도해주세요.'),
+              ],
+            ),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSyncing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +99,25 @@ class NotionSidebar extends StatelessWidget {
                         fontWeight: FontWeight.w600, fontSize: 13),
                       overflow: TextOverflow.ellipsis),
                   ),
+                  // 동기화 버튼
+                  _isSyncing
+                    ? const SizedBox(
+                        width: 28, height: 28,
+                        child: Center(
+                          child: SizedBox(
+                            width: 14, height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF5DA3E8),
+                            ),
+                          ),
+                        ),
+                      )
+                    : _SidebarIconBtn(
+                        icon: Icons.sync_rounded,
+                        tooltip: '데이터 동기화 (새로고침)',
+                        onTap: () => _syncData(context),
+                      ),
                   _SidebarIconBtn(
                     icon: Icons.keyboard_double_arrow_left,
                     tooltip: '사이드바 닫기',
@@ -177,6 +248,12 @@ class NotionSidebar extends StatelessWidget {
             // ── 마스터: 계정 관리 버튼
             if (auth.isMaster)
               _AccountManageButton(auth: auth),
+
+            // ── 수동 동기화 버튼
+            _ManualSyncButton(
+              isSyncing: _isSyncing,
+              onSync: () => _syncData(context),
+            ),
 
             // ── 로그아웃 버튼
             _LogoutButton(auth: auth),
@@ -885,6 +962,69 @@ class _MiniStat extends StatelessWidget {
       Text(label, style: const TextStyle(color: NotionTheme.sidebarSubtext, fontSize: 10)),
     ],
   );
+}
+
+// ── 수동 동기화(저장) 버튼
+class _ManualSyncButton extends StatefulWidget {
+  final bool isSyncing;
+  final VoidCallback onSync;
+  const _ManualSyncButton({required this.isSyncing, required this.onSync});
+
+  @override
+  State<_ManualSyncButton> createState() => _ManualSyncButtonState();
+}
+
+class _ManualSyncButtonState extends State<_ManualSyncButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit:  (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.isSyncing ? null : widget.onSync,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: _hover
+              ? const Color(0xFF3A7BD5).withValues(alpha: 0.25)
+              : const Color(0xFF5DA3E8).withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: const Color(0xFF5DA3E8).withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              widget.isSyncing
+                ? const SizedBox(
+                    width: 15, height: 15,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Color(0xFF5DA3E8)),
+                  )
+                : const Icon(Icons.cloud_sync_rounded,
+                    size: 15, color: Color(0xFF5DA3E8)),
+              const SizedBox(width: 8),
+              Text(
+                widget.isSyncing ? '동기화 중...' : '데이터 저장 / 새로고침',
+                style: const TextStyle(
+                  color: Color(0xFF5DA3E8),
+                  fontSize: 13, fontWeight: FontWeight.w500),
+              ),
+              const Spacer(),
+              if (!widget.isSyncing)
+                const Icon(Icons.sync_rounded,
+                  size: 13, color: Color(0xFF5DA3E8)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _EmptyDeptHint extends StatelessWidget {
