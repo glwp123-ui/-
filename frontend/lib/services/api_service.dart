@@ -1,26 +1,22 @@
 /// song work API 서비스
-/// 백엔드 URL 우선순위:
-///   1. --dart-define=API_BASE_URL=https://xxx.onrender.com  (빌드 시 주입)
-///   2. 웹: 현재 호스트의 8000 포트 자동 감지 (sandbox/로컬 개발)
-///   3. 네이티브: http://localhost:8000
 library;
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-// 빌드 시 --dart-define=API_BASE_URL=... 로 주입 가능
+// 백엔드 URL (Render 배포 주소 고정)
+const String _productionApiUrl = 'https://1-mgt1.onrender.com';
+
+// 빌드 시 --dart-define=API_BASE_URL=... 로 주입 가능 (오버라이드용)
 const String _injectedApiUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 
 String get _base {
   // 1순위: 빌드 시 주입된 URL
   if (_injectedApiUrl.isNotEmpty) return _injectedApiUrl;
-  // 2순위: 웹 - 현재 호스트의 8000 포트
-  if (kIsWeb) {
-    final origin = Uri.base.origin;
-    return origin.replaceFirst(RegExp(r':\d+'), ':8000');
-  }
-  // 3순위: 로컬 기본값
+  // 2순위: 프로덕션 고정 URL (웹 배포 시)
+  if (kIsWeb) return _productionApiUrl;
+  // 3순위: 로컬 개발
   return 'http://localhost:8000';
 }
 

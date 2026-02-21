@@ -3,8 +3,9 @@
 
 [build]
   base = "frontend"
-  command = "flutter build web --release --dart-define=API_BASE_URL=https://1-mgt1.onrender.com"
+  command = "flutter build web --release --dart-define=API_BASE_URL=https://1-mgt1.onrender.com --no-wasm-dry-run"
   publish = "build/web"
 
 [build.environment]
   FLUTTER_VERSION = "stable"
+  API_BASE_URL = "https://1-mgt1.onrender.com"
