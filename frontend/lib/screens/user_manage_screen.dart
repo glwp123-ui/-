@@ -5,8 +5,22 @@ import '../providers/auth_provider.dart';
 import '../providers/app_provider.dart';
 import '../utils/notion_theme.dart';
 
-class UserManageScreen extends StatelessWidget {
+class UserManageScreen extends StatefulWidget {
   const UserManageScreen({super.key});
+
+  @override
+  State<UserManageScreen> createState() => _UserManageScreenState();
+}
+
+class _UserManageScreenState extends State<UserManageScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // 화면 진입 시 항상 최신 유저 목록 로드
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AuthProvider>().reloadUsers();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

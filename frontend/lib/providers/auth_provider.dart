@@ -36,7 +36,8 @@ class AuthProvider extends ChangeNotifier {
           final me = await api.get('/auth/me');
           _currentUser = AppUser.fromJson(me);
           // 전체 사용자 목록도 로드 (마스터 권한이면)
-          if (_currentUser!.role == UserRole.master) await _loadUsers();
+          if (_currentUser!.role == UserRole.master ||
+              _currentUser!.role == UserRole.admin) { await _loadUsers(); }
         } catch (_) {
           // 토큰 만료 → 클리어
           api.setToken(null);
@@ -59,8 +60,9 @@ class AuthProvider extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString(_kToken,  data['access_token']);
       await p.setString(_kUserId, _currentUser!.id);
-      // 마스터면 사용자 목록 로드
-      if (_currentUser!.role == UserRole.master) await _loadUsers();
+      // 마스터/관리자면 사용자 목록 로드
+      if (_currentUser!.role == UserRole.master ||
+          _currentUser!.role == UserRole.admin) { await _loadUsers(); }
       notifyListeners();
       return null;
     } on ApiException catch (e) {

@@ -25,7 +25,11 @@ class _NotionSidebarState extends State<NotionSidebar> {
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
     try {
-      await context.read<AppProvider>().load();
+      // 업무/부서 + 유저 목록 동시 새로고침
+      await Future.wait([
+        context.read<AppProvider>().load(),
+        context.read<AuthProvider>().reloadUsers(),
+      ]);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
