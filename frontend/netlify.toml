@@ -3,7 +3,7 @@
 
 [build]
   base = "frontend"
-  command = "flutter build web --release --dart-define=API_BASE_URL=https://songwork-api.onrender.com"
+  command = "flutter build web --release --dart-define=API_BASE_URL=https://1-mgt1.onrender.com"
   publish = "build/web"
 
 [build.environment]
