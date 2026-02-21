@@ -1,0 +1,25 @@
+# Backend
+backend/__pycache__/
+backend/**/__pycache__/
+backend/*.pyc
+backend/data/
+backend/*.db
+backend/server.log
+backend/.env
+
+# Flutter
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/android/.gradle/
+frontend/android/app/build/
+frontend/.pub-cache/
+frontend/pubspec.lock
+
+# Common
+.DS_Store
+*.log
+.env
+.env.*
