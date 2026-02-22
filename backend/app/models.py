@@ -93,3 +93,24 @@ class Report(Base):
     updated_at   : Mapped[datetime]   = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     task: Mapped["Task"] = relationship("Task", back_populates="reports")
+
+
+# ── 일일 보관함 (날짜별 자동/수동 저장) ───────────────
+class DailyRecord(Base):
+    """
+    매일 자정 or 수동 저장 시 그날의 업무 현황을 별도 보관함에 영구 저장.
+    summary_json: 부서별 완료/진행 업무 목록 + 보고 내용 전체 (JSON)
+    """
+    __tablename__ = "daily_records"
+
+    id           : Mapped[str]  = mapped_column(String(36), primary_key=True)
+    date         : Mapped[str]  = mapped_column(String(10), unique=True, nullable=False)  # "YYYY-MM-DD"
+    summary_json : Mapped[str]  = mapped_column(Text, nullable=False)   # 전체 내용 JSON
+    total_tasks  : Mapped[int]  = mapped_column(Integer, default=0)
+    done_count   : Mapped[int]  = mapped_column(Integer, default=0)
+    in_progress  : Mapped[int]  = mapped_column(Integer, default=0)
+    not_started  : Mapped[int]  = mapped_column(Integer, default=0)
+    dept_count   : Mapped[int]  = mapped_column(Integer, default=0)
+    saved_by     : Mapped[str]  = mapped_column(String(20), default="auto")  # "auto" or "manual"
+    created_at   : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at   : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

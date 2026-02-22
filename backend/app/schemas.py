@@ -142,3 +142,35 @@ class DailyReportDept(BaseModel):
 
 # 순환참조 해결
 TokenResponse.model_rebuild()
+
+
+# ── DailyRecord (일일 보관함) ──────────────────────────
+class DailyRecordOut(BaseModel):
+    id          : str
+    date        : str
+    summary_json: str
+    total_tasks : int
+    done_count  : int
+    in_progress : int
+    not_started : int
+    dept_count  : int
+    saved_by    : str
+    created_at  : datetime
+    updated_at  : datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DailyRecordListItem(BaseModel):
+    """목록 조회용 (summary_json 제외 - 용량 절약)"""
+    id          : str
+    date        : str
+    total_tasks : int
+    done_count  : int
+    in_progress : int
+    not_started : int
+    dept_count  : int
+    saved_by    : str
+    created_at  : datetime
+
+    model_config = {"from_attributes": True}
