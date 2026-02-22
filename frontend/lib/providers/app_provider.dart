@@ -18,12 +18,14 @@ class AppProvider extends ChangeNotifier {
   // ── 현재 로그인 사용자 정보 (담당자 필터링용) ───────
   String?  _currentUserName;  // displayName
   String?  _currentUserId;    // user id
+  String?  _currentUserDeptId; // 소속 부서 id
   bool     _isAdminOrAbove = true;
 
-  void setCurrentUser(String? displayName, bool isAdminOrAbove, {String? userId}) {
-    _currentUserName  = displayName;
-    _currentUserId    = userId;
-    _isAdminOrAbove   = isAdminOrAbove;
+  void setCurrentUser(String? displayName, bool isAdminOrAbove, {String? userId, String? userDeptId}) {
+    _currentUserName   = displayName;
+    _currentUserId     = userId;
+    _currentUserDeptId = userDeptId;
+    _isAdminOrAbove    = isAdminOrAbove;
     notifyListeners();
   }
 
@@ -48,22 +50,49 @@ class AppProvider extends ChangeNotifier {
       _selectedDeptId == null ? '🏠' : (selectedDept?.emoji ?? '📁');
 
   // ── 담당자 필터 헬퍼 ─────────────────────────────
-  /// user 역할이면 자신이 담당자이거나 담당자 미지정(assignee null) 업무만 표시
-  /// master/admin은 전체 표시
-  /// user 역할: 자신이 assigneeNames에 포함되거나 담당자 미지정 업무만 표시
+  /// user 역할 필터 규칙 (명확한 순서):
+  /// 1) admin/master         → 전체 표시
+  /// 2) __ALL__ 지정         → 전체 표시
+  /// 3) hasExplicitDeptIds=false (구버전 업무, dept_id만 있음)
+  ///    → assigneeNames도 없으면 공통 업무 → 전체 표시
+  ///    → assigneeNames 있으면 내 이름 포함 여부로 판단
+  /// 4) hasExplicitDeptIds=true (신규 업무, department_ids 명시)
+  ///    → 내 소속 부서 ID가 departmentIds에 포함 → 표시
+  ///    → 내 이름이 assigneeNames에 포함 → 표시
+  ///    → 그 외 → 숨김
   bool _passesUserFilter(Task t) {
     if (_isAdminOrAbove) return true;
-    // 담당자 없으면 모두에게 보임
-    if (t.assigneeNames.isEmpty) return true;
-    if (_currentUserName == null) return true;
-    return t.assigneeNames.contains(_currentUserName);
+
+    // __ALL__ 지정된 업무 → 전원 표시
+    if (t.departmentIds.contains('__ALL__')) return true;
+
+    // 구버전 업무 (department_ids가 API에서 null로 온 경우)
+    if (!t.hasExplicitDeptIds) {
+      // 담당자 지정도 없으면 공통 업무 → 전체 표시
+      if (t.assigneeNames.isEmpty) return true;
+      // 담당자 지정 있으면 내 이름 포함 여부
+      return _currentUserName != null &&
+             t.assigneeNames.contains(_currentUserName);
+    }
+
+    // 신규 업무 (department_ids 명시적으로 지정됨)
+    // 내 이름이 담당자에 포함
+    if (_currentUserName != null && t.assigneeNames.contains(_currentUserName)) {
+      return true;
+    }
+    // 내 소속 부서가 departmentIds에 포함
+    if (_currentUserDeptId != null && t.departmentIds.contains(_currentUserDeptId)) {
+      return true;
+    }
+    // 그 외 → 내 업무 아님
+    return false;
   }
 
   // ── 필터링 ────────────────────────────────────────
   List<Task> getTasksByStatus(TaskStatus status, {String? deptId}) {
     final id = deptId ?? _selectedDeptId;
     return _tasks.where((t) {
-      if (id != null && t.departmentId != id) return false;
+      if (id != null && !t.departmentIds.contains(id) && t.departmentId != id) return false;
       if (t.status != status) return false;
       return _passesUserFilter(t);
     }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -73,7 +102,7 @@ class AppProvider extends ChangeNotifier {
     final id = deptId ?? _selectedDeptId;
     return _tasks
         .where((t) {
-          if (id != null && t.departmentId != id) return false;
+          if (id != null && !t.departmentIds.contains(id) && t.departmentId != id) return false;
           return _passesUserFilter(t);
         })
         .toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -171,6 +200,7 @@ class AppProvider extends ChangeNotifier {
     required String title,
     String description = '',
     required String departmentId,
+    List<String>? departmentIds,
     TaskStatus status   = TaskStatus.notStarted,
     TaskPriority priority = TaskPriority.medium,
     DateTime? startDate,
@@ -179,9 +209,12 @@ class AppProvider extends ChangeNotifier {
   }) async {
     final names = assigneeNames ?? [];
     final namesJson = '[${names.map((n) => '"${n.replaceAll('"', '')}"').join(',')}]';
+    final deptIds = departmentIds ?? [departmentId];
+    final deptIdsJson = '[${deptIds.map((d) => '"$d"').join(',')}]';
     final data = await api.createTask({
       'title': title, 'description': description,
       'dept_id': departmentId,
+      'department_ids': deptIdsJson,
       'status':   status.name,
       'priority': priority.name,
       if (names.isNotEmpty) 'assignee_name': names.first,
@@ -189,16 +222,22 @@ class AppProvider extends ChangeNotifier {
       if (startDate != null) 'start_date': startDate.toIso8601String(),
       if (dueDate   != null) 'due_date':   dueDate.toIso8601String(),
     });
-    _tasks.insert(0, Task.fromJson(data));
+    final newTask = Task.fromJson(data);
+    newTask.departmentIds = deptIds;
+    newTask.hasExplicitDeptIds = true;  // 새로 만든 업무는 항상 명시적 지정
+    _tasks.insert(0, newTask);
     notifyListeners();
   }
 
   Future<void> updateTask(Task t) async {
     final names = t.assigneeNames;
     final namesJson = '[${names.map((n) => '"${n.replaceAll('"', '')}"').join(',')}]';
+    final deptIds = t.departmentIds;
+    final deptIdsJson = '[${deptIds.map((d) => '"$d"').join(',')}]';
     final data = await api.updateTask(t.id, {
       'title': t.title, 'description': t.description,
       'dept_id': t.departmentId,
+      'department_ids': deptIdsJson,
       'status':   t.status.name,
       'priority': t.priority.name,
       'assignee_name': names.isNotEmpty ? names.first : null,
@@ -206,8 +245,11 @@ class AppProvider extends ChangeNotifier {
       if (t.startDate != null) 'start_date': t.startDate!.toIso8601String(),
       if (t.dueDate   != null) 'due_date':   t.dueDate!.toIso8601String(),
     });
+    final updated = Task.fromJson(data);
+    updated.departmentIds = deptIds;
+    updated.hasExplicitDeptIds = true;  // 수정된 업무도 명시적 지정
     final i = _tasks.indexWhere((x) => x.id == t.id);
-    if (i != -1) { _tasks[i] = Task.fromJson(data); notifyListeners(); }
+    if (i != -1) { _tasks[i] = updated; notifyListeners(); }
   }
 
   Future<void> updateTaskStatus(String id, TaskStatus s) async {

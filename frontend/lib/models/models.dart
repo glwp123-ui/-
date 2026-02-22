@@ -131,21 +131,27 @@ class Task {
   String title;
   String description;
   String departmentId;
+  List<String> departmentIds;
+  /// true = department_ids가 API에서 명시적으로 지정된 업무
+  /// false = 구버전 업무 (department_ids null, dept_id만 있음)
+  bool hasExplicitDeptIds;
   TaskStatus status;
   TaskPriority priority;
   DateTime createdAt;
-  DateTime? startDate;  // 일정 시작일 (달력에 표시)
+  DateTime? startDate;
   DateTime? dueDate;
-  List<String> assigneeNames;  // 다중 담당자 이름 목록
-  List<TaskReport> reports; // 중간 보고 목록
-  bool isHidden;            // 보드에서 숨김 (보관함엔 유지)
-  DateTime? hiddenAt;       // 숨긴 일시
+  List<String> assigneeNames;
+  List<TaskReport> reports;
+  bool isHidden;
+  DateTime? hiddenAt;
 
   Task({
     required this.id,
     required this.title,
     this.description = '',
     required this.departmentId,
+    List<String>? departmentIds,
+    this.hasExplicitDeptIds = false,
     this.status = TaskStatus.notStarted,
     this.priority = TaskPriority.medium,
     required this.createdAt,
@@ -155,7 +161,10 @@ class Task {
     List<TaskReport>? reports,
     this.isHidden = false,
     this.hiddenAt,
-  }) : assigneeNames = assigneeNames ?? [],
+  }) : departmentIds = (departmentIds != null && departmentIds.isNotEmpty)
+            ? departmentIds
+            : [departmentId],
+       assigneeNames = assigneeNames ?? [],
        reports = reports ?? [];
 
   /// 하위 호환: 첫 번째 담당자 이름 (단일 담당자 표시용)
@@ -176,7 +185,8 @@ class Task {
 
   Map<String, dynamic> toJson() => {
     'id': id, 'title': title, 'description': description,
-    'departmentId': departmentId, 'status': status.index,
+    'departmentId': departmentId, 'departmentIds': departmentIds,
+    'status': status.index,
     'priority': priority.index, 'createdAt': createdAt.toIso8601String(),
     'startDate': startDate?.toIso8601String(),
     'dueDate': dueDate?.toIso8601String(),
@@ -212,10 +222,15 @@ class Task {
           orElse: () => TaskPriority.medium);
       return TaskPriority.values[p ?? 1];
     }
+    final rawDeptIds = j['department_ids'];   // API 원본 null 여부 확인
+    final parsedDeptIds = _parseNames(rawDeptIds ?? j['departmentIds']);
     return Task(
       id: j['id'], title: j['title'], description: j['description'] ?? '',
       // API는 dept_id, 로컬은 departmentId
       departmentId: j['dept_id'] ?? j['departmentId'] ?? '',
+      departmentIds: parsedDeptIds,
+      // API에서 department_ids 값이 실제로 내려온 경우에만 true
+      hasExplicitDeptIds: rawDeptIds != null && rawDeptIds.toString().length > 2,
       status:   parseStatus(j['status']),
       priority: parsePriority(j['priority']),
       createdAt:  DateTime.parse(j['created_at'] ?? j['createdAt']),
