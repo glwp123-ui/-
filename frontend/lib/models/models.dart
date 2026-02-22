@@ -137,6 +137,7 @@ class Task {
   DateTime? startDate;  // 일정 시작일 (달력에 표시)
   DateTime? dueDate;
   String? assigneeName;
+  List<String> assigneeIds;  // 다중 담당자 ID 목록
   List<TaskReport> reports; // 중간 보고 목록
   bool isHidden;            // 보드에서 숨김 (보관함엔 유지)
   DateTime? hiddenAt;       // 숨긴 일시
@@ -152,10 +153,12 @@ class Task {
     this.startDate,
     this.dueDate,
     this.assigneeName,
+    List<String>? assigneeIds,
     List<TaskReport>? reports,
     this.isHidden = false,
     this.hiddenAt,
-  }) : reports = reports ?? [];
+  }) : assigneeIds = assigneeIds ?? [],
+       reports = reports ?? [];
 
   bool get isOverdue =>
       dueDate != null && status != TaskStatus.done && DateTime.now().isAfter(dueDate!);
@@ -176,8 +179,27 @@ class Task {
     'priority': priority.index, 'createdAt': createdAt.toIso8601String(),
     'startDate': startDate?.toIso8601String(),
     'dueDate': dueDate?.toIso8601String(), 'assigneeName': assigneeName,
+    'assigneeIds': assigneeIds,
     'reports': reports.map((r) => r.toJson()).toList(),
   };
+
+  static List<String> _parseAssigneeIds(dynamic raw) {
+    if (raw == null) return [];
+    if (raw is List) return raw.map((e) => e.toString()).toList();
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        // JSON 문자열인 경우 파싱
+        if (raw.startsWith('[')) {
+          final decoded = raw
+              .replaceAll('[', '').replaceAll(']', '')
+              .replaceAll('"', '').replaceAll("'", '')
+              .split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+          return decoded;
+        }
+      } catch (_) {}
+    }
+    return [];
+  }
 
   factory Task.fromJson(Map<String, dynamic> j) {
     // status: API는 문자열, 로컬은 int index
@@ -205,6 +227,7 @@ class Task {
           ? DateTime.parse(j['due_date'] ?? j['dueDate'])
           : null,
       assigneeName: j['assignee_name'] ?? j['assigneeName'],
+      assigneeIds: _parseAssigneeIds(j['assignee_ids'] ?? j['assigneeIds']),
       reports: j['reports'] != null
           ? (j['reports'] as List).map((r) => TaskReport.fromJson(r)).toList()
           : [],

@@ -69,6 +69,7 @@ class Task(Base):
     status       : Mapped[TaskStatus]   = mapped_column(SAEnum(TaskStatus),   default=TaskStatus.notStarted)
     priority     : Mapped[TaskPriority] = mapped_column(SAEnum(TaskPriority), default=TaskPriority.medium)
     assignee_name: Mapped[str | None]   = mapped_column(String(100), nullable=True)
+    assignee_ids : Mapped[str | None]   = mapped_column(Text, nullable=True)  # JSON 배열: ["user_id1","user_id2"]
     start_date   : Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_date     : Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     is_hidden    : Mapped[bool] = mapped_column(Boolean, default=False)  # 완료 후 보드에서 숨김 (보관함엔 유지)

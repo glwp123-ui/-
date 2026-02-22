@@ -382,7 +382,13 @@ class _TaskCardState extends State<_TaskCard> {
                         ),
                       ]),
                     ),
-                  if (widget.task.assigneeName != null) ...[
+                  if (widget.task.assigneeIds.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _MultiAssigneeAvatars(
+                      task: widget.task,
+                      maxShow: 3,
+                    ),
+                  ] else if (widget.task.assigneeName != null) ...[
                     const SizedBox(width: 6),
                     CircleAvatar(
                       radius: 10,
@@ -398,6 +404,76 @@ class _TaskCardState extends State<_TaskCard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── 다중 담당자 아바타 (겹쳐 표시) ─────────────────────
+class _MultiAssigneeAvatars extends StatelessWidget {
+  final Task task;
+  final int maxShow;
+  const _MultiAssigneeAvatars({required this.task, this.maxShow = 3});
+
+  Color _avatarColor(String name) {
+    final colors = [
+      const Color(0xFF2383E2), const Color(0xFF0F7B6C), const Color(0xFF6C5FD4),
+      const Color(0xFFEB5757), const Color(0xFFCB912F), const Color(0xFF4CAF50),
+    ];
+    return colors[name.isEmpty ? 0 : name.codeUnitAt(0) % colors.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // AuthProvider에서 사용자 이름 가져오기
+    List<String> names = [];
+    try {
+      final authProv = context.read<AuthProvider>();
+      for (final id in task.assigneeIds) {
+        try {
+          final user = authProv.users.firstWhere((u) => u.id == id);
+          names.add(user.displayName);
+        } catch (_) {
+          names.add(id.isNotEmpty ? id[0].toUpperCase() : '?');
+        }
+      }
+    } catch (_) {
+      names = task.assigneeIds.map((id) => id.isNotEmpty ? id[0].toUpperCase() : '?').toList();
+    }
+
+    final showCount = names.length > maxShow ? maxShow : names.length;
+    final extra = names.length - maxShow;
+
+    return SizedBox(
+      width: showCount * 14.0 + (extra > 0 ? 18 : 0),
+      height: 20,
+      child: Stack(
+        children: [
+          for (int i = 0; i < showCount; i++)
+            Positioned(
+              left: i * 14.0,
+              child: CircleAvatar(
+                radius: 10,
+                backgroundColor: _avatarColor(names[i]),
+                child: Text(
+                  names[i].isNotEmpty ? names[i][0] : '?',
+                  style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          if (extra > 0)
+            Positioned(
+              left: maxShow * 14.0,
+              child: CircleAvatar(
+                radius: 10,
+                backgroundColor: Colors.grey.shade400,
+                child: Text(
+                  '+$extra',
+                  style: const TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

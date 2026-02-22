@@ -53,6 +53,7 @@ async def create_task(
         status=body.status,
         priority=body.priority,
         assignee_name=body.assignee_name,
+        assignee_ids=body.assignee_ids,
         start_date=body.start_date,
         due_date=body.due_date,
         created_at=datetime.utcnow(),
@@ -89,6 +90,7 @@ async def update_task(
     if body.status        is not None: task.status        = body.status
     if body.priority      is not None: task.priority      = body.priority
     if body.assignee_name is not None: task.assignee_name = body.assignee_name
+    if body.assignee_ids  is not None: task.assignee_ids  = body.assignee_ids
     if body.start_date    is not None: task.start_date    = body.start_date
     if body.due_date      is not None: task.due_date      = body.due_date
     task.updated_at = datetime.utcnow()

@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
 import '../models/models.dart';
+import '../models/user_model.dart';
 import '../providers/app_provider.dart';
+import '../providers/auth_provider.dart';
 import '../utils/notion_theme.dart';
 
 void showTaskDetail(BuildContext context, Task task) {
@@ -11,8 +13,11 @@ void showTaskDetail(BuildContext context, Task task) {
     isScrollControlled: true,
     backgroundColor: Colors.white,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-    builder: (_) => ChangeNotifierProvider.value(
-      value: context.read<AppProvider>(),
+    builder: (_) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: context.read<AppProvider>()),
+        ChangeNotifierProvider.value(value: context.read<AuthProvider>()),
+      ],
       child: _TaskDetailSheet(task: task),
     ),
   );
@@ -161,16 +166,7 @@ class _TaskDetailSheetState extends State<_TaskDetailSheet> with SingleTickerPro
                         : const Text('없음', style: TextStyle(color: NotionTheme.textMuted))),
                       _PropertyRow(label: '상태', child: _StatusChip(status: _task.status)),
                       _PropertyRow(label: '우선순위', child: _PriorityChip(priority: _task.priority)),
-                      _PropertyRow(label: '담당자', child: _task.assigneeName != null
-                        ? Row(mainAxisSize: MainAxisSize.min, children: [
-                            CircleAvatar(radius: 12,
-                              backgroundColor: NotionTheme.accentLight,
-                              child: Text(_task.assigneeName![0],
-                                style: const TextStyle(fontSize: 11, color: NotionTheme.accent, fontWeight: FontWeight.bold))),
-                            const SizedBox(width: 8),
-                            Text(_task.assigneeName!, style: const TextStyle(fontSize: 14, color: NotionTheme.textPrimary)),
-                          ])
-                        : const Text('없음', style: TextStyle(color: NotionTheme.textMuted))),
+                      _PropertyRow(label: '담당자', child: _buildAssigneeDisplay(context, provider)),
                       _PropertyRow(label: '마감일', child: _task.dueDate != null
                         ? Row(mainAxisSize: MainAxisSize.min, children: [
                             Icon(Icons.calendar_today_outlined, size: 13,
@@ -228,6 +224,60 @@ class _TaskDetailSheetState extends State<_TaskDetailSheet> with SingleTickerPro
 
   String _fmtDate(DateTime d) =>
       '${d.year}.${d.month.toString().padLeft(2,'0')}.${d.day.toString().padLeft(2,'0')}';
+
+  Widget _buildAssigneeDisplay(BuildContext context, AppProvider provider) {
+    // assigneeIds 기반 다중 담당자 표시
+    List<AppUser> assignedUsers = [];
+    try {
+      final authProv = context.read<AuthProvider>();
+      if (_task.assigneeIds.isNotEmpty) {
+        assignedUsers = authProv.users
+            .where((u) => _task.assigneeIds.contains(u.id))
+            .toList();
+      }
+    } catch (_) {}
+
+    if (assignedUsers.isNotEmpty) {
+      // ID로 매칭된 사용자들 표시
+      return Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: assignedUsers.map((u) {
+          final colors = [
+            const Color(0xFF2383E2), const Color(0xFF0F7B6C), const Color(0xFF6C5FD4),
+            const Color(0xFFEB5757), const Color(0xFFCB912F),
+          ];
+          final color = colors[u.displayName.isEmpty ? 0 : u.displayName.codeUnitAt(0) % colors.length];
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withValues(alpha: 0.3)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              CircleAvatar(radius: 9, backgroundColor: color,
+                child: Text(u.displayName.isNotEmpty ? u.displayName[0] : '?',
+                  style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold))),
+              const SizedBox(width: 5),
+              Text(u.displayName, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+            ]),
+          );
+        }).toList(),
+      );
+    } else if (_task.assigneeName != null && _task.assigneeName!.isNotEmpty) {
+      // 하위 호환: 이름만 있는 경우
+      return Row(mainAxisSize: MainAxisSize.min, children: [
+        CircleAvatar(radius: 12,
+          backgroundColor: NotionTheme.accentLight,
+          child: Text(_task.assigneeName![0],
+            style: const TextStyle(fontSize: 11, color: NotionTheme.accent, fontWeight: FontWeight.bold))),
+        const SizedBox(width: 8),
+        Text(_task.assigneeName!, style: const TextStyle(fontSize: 14, color: NotionTheme.textPrimary)),
+      ]);
+    }
+    return const Text('없음', style: TextStyle(color: NotionTheme.textMuted));
+  }
 }
 
 // ──────────────────────────────────────────────────────
@@ -571,8 +621,16 @@ class _ReportItemState extends State<_ReportItem> {
 }
 
 void _openEditForm(BuildContext context, Task task) {
+  final appProv  = context.read<AppProvider>();
+  final authProv = context.read<AuthProvider>();
   Navigator.of(context).push(MaterialPageRoute(
-    builder: (_) => _TaskFormPage(task: task),
+    builder: (_) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: appProv),
+        ChangeNotifierProvider.value(value: authProv),
+      ],
+      child: _TaskFormPage(task: task),
+    ),
     fullscreenDialog: true,
   ));
 }
@@ -719,12 +777,13 @@ class _TaskFormPageState extends State<_TaskFormPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleCtrl;
   late TextEditingController _descCtrl;
-  late TextEditingController _assigneeCtrl;
   String? _deptId;
   TaskStatus _status = TaskStatus.notStarted;
   TaskPriority _priority = TaskPriority.medium;
   DateTime? _startDate;
   DateTime? _dueDate;
+  // 다중 담당자 - 선택된 사용자 ID 목록
+  List<String> _selectedAssigneeIds = [];
 
   @override
   void initState() {
@@ -732,17 +791,17 @@ class _TaskFormPageState extends State<_TaskFormPage> {
     final t = widget.task;
     _titleCtrl   = TextEditingController(text: t?.title ?? '');
     _descCtrl    = TextEditingController(text: t?.description ?? '');
-    _assigneeCtrl= TextEditingController(text: t?.assigneeName ?? '');
     _deptId      = t?.departmentId ?? widget.preselectedDeptId;
     _status      = t?.status   ?? TaskStatus.notStarted;
     _priority    = t?.priority ?? TaskPriority.medium;
     _startDate   = t?.startDate;
     _dueDate     = t?.dueDate;
+    _selectedAssigneeIds = List<String>.from(t?.assigneeIds ?? []);
   }
 
   @override
   void dispose() {
-    _titleCtrl.dispose(); _descCtrl.dispose(); _assigneeCtrl.dispose();
+    _titleCtrl.dispose(); _descCtrl.dispose();
     super.dispose();
   }
 
@@ -811,14 +870,12 @@ class _TaskFormPageState extends State<_TaskFormPage> {
               bgColor: (_) => NotionTheme.surface,
               onChanged: (p) => setState(() => _priority = p),
             )),
-            _FormPropRow(label: '담당자', child: SizedBox(
-              width: 160,
-              child: TextField(
-                controller: _assigneeCtrl,
-                decoration: const InputDecoration(hintText: '이름 입력'),
-                style: const TextStyle(fontSize: 14),
-              ),
-            )),
+            // ── 다중 담당자 선택 ──────────────────────────────
+            _AssigneeSelectorRow(
+              allUsers: _getAvailableUsers(provider),
+              selectedIds: _selectedAssigneeIds,
+              onChanged: (ids) => setState(() => _selectedAssigneeIds = ids),
+            ),
             // 시작일
             _FormPropRow(label: '시작일', child: _DatePickerBtn(
               date: _startDate,
@@ -853,6 +910,16 @@ class _TaskFormPageState extends State<_TaskFormPage> {
     );
   }
 
+  /// AuthProvider에서 사용자 목록 가져오기
+  List<_UserInfo> _getAvailableUsers(AppProvider provider) {
+    try {
+      final authProv = context.read<AuthProvider>();
+      return authProv.users.map((u) => _UserInfo(id: u.id, name: u.displayName)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_deptId == null) {
@@ -862,6 +929,19 @@ class _TaskFormPageState extends State<_TaskFormPage> {
       return;
     }
     final provider = context.read<AppProvider>();
+    // 대표 담당자 이름(assignee_name): 첫 번째 선택자의 displayName
+    String? assigneeName;
+    if (_selectedAssigneeIds.isNotEmpty) {
+      try {
+        final users = _getAvailableUsers(provider);
+        final first = users.firstWhere(
+          (u) => u.id == _selectedAssigneeIds.first,
+          orElse: () => _UserInfo(id: '', name: ''),
+        );
+        if (first.id.isNotEmpty) assigneeName = first.name;
+      } catch (_) {}
+    }
+
     if (widget.task != null) {
       final t = widget.task!;
       t.title = _titleCtrl.text.trim();
@@ -871,7 +951,8 @@ class _TaskFormPageState extends State<_TaskFormPage> {
       t.priority = _priority;
       t.startDate = _startDate;
       t.dueDate = _dueDate;
-      t.assigneeName = _assigneeCtrl.text.trim().isEmpty ? null : _assigneeCtrl.text.trim();
+      t.assigneeName = assigneeName;
+      t.assigneeIds = List<String>.from(_selectedAssigneeIds);
       await provider.updateTask(t);
     } else {
       await provider.addTask(
@@ -881,10 +962,291 @@ class _TaskFormPageState extends State<_TaskFormPage> {
         status: _status, priority: _priority,
         startDate: _startDate,
         dueDate: _dueDate,
-        assigneeName: _assigneeCtrl.text.trim().isEmpty ? null : _assigneeCtrl.text.trim(),
+        assigneeName: assigneeName,
+        assigneeIds: _selectedAssigneeIds,
       );
     }
     if (mounted) Navigator.pop(context);
+  }
+}
+
+// ── 사용자 정보 단순 DTO ─────────────────────────────
+class _UserInfo {
+  final String id;
+  final String name;
+  const _UserInfo({required this.id, required this.name});
+}
+
+// ── 다중 담당자 선택 Row ──────────────────────────────
+class _AssigneeSelectorRow extends StatelessWidget {
+  final List<_UserInfo> allUsers;
+  final List<String> selectedIds;
+  final ValueChanged<List<String>> onChanged;
+
+  const _AssigneeSelectorRow({
+    required this.allUsers,
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 72,
+            child: Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('담당자', style: TextStyle(fontSize: 13, color: NotionTheme.textSecondary)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 선택된 담당자 칩 목록
+                if (selectedIds.isNotEmpty)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: selectedIds.map((id) {
+                      final user = allUsers.firstWhere(
+                        (u) => u.id == id,
+                        orElse: () => _UserInfo(id: id, name: id),
+                      );
+                      return _AssigneeChip(
+                        name: user.name,
+                        onRemove: () {
+                          final newIds = List<String>.from(selectedIds)..remove(id);
+                          onChanged(newIds);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                const SizedBox(height: 6),
+                // 담당자 추가 버튼
+                GestureDetector(
+                  onTap: () => _showUserPicker(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: NotionTheme.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: NotionTheme.border),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.person_add_outlined, size: 14, color: NotionTheme.textSecondary),
+                      const SizedBox(width: 5),
+                      Text(
+                        selectedIds.isEmpty ? '담당자 지정' : '담당자 추가',
+                        style: const TextStyle(fontSize: 13, color: NotionTheme.textSecondary),
+                      ),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUserPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+      ),
+      builder: (_) {
+        return _UserPickerSheet(
+          allUsers: allUsers,
+          selectedIds: selectedIds,
+          onToggle: (id) {
+            final newIds = List<String>.from(selectedIds);
+            if (newIds.contains(id)) {
+              newIds.remove(id);
+            } else {
+              newIds.add(id);
+            }
+            onChanged(newIds);
+          },
+        );
+      },
+    );
+  }
+}
+
+// ── 담당자 칩 위젯 ──────────────────────────────────
+class _AssigneeChip extends StatelessWidget {
+  final String name;
+  final VoidCallback onRemove;
+  const _AssigneeChip({required this.name, required this.onRemove});
+
+  Color _avatarColor(String name) {
+    final colors = [
+      const Color(0xFF2383E2), const Color(0xFF0F7B6C), const Color(0xFF6C5FD4),
+      const Color(0xFFEB5757), const Color(0xFFCB912F), const Color(0xFF4CAF50),
+    ];
+    final idx = name.isEmpty ? 0 : name.codeUnitAt(0) % colors.length;
+    return colors[idx];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _avatarColor(name);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        CircleAvatar(
+          radius: 10,
+          backgroundColor: color,
+          child: Text(
+            name.isNotEmpty ? name[0] : '?',
+            style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(name, style: TextStyle(fontSize: 13, color: color, fontWeight: FontWeight.w500)),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: onRemove,
+          child: Icon(Icons.close, size: 13, color: color.withValues(alpha: 0.7)),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── 사용자 선택 바텀시트 ────────────────────────────
+class _UserPickerSheet extends StatefulWidget {
+  final List<_UserInfo> allUsers;
+  final List<String> selectedIds;
+  final ValueChanged<String> onToggle;
+  const _UserPickerSheet({
+    required this.allUsers,
+    required this.selectedIds,
+    required this.onToggle,
+  });
+
+  @override
+  State<_UserPickerSheet> createState() => _UserPickerSheetState();
+}
+
+class _UserPickerSheetState extends State<_UserPickerSheet> {
+  late List<String> _localSelected;
+
+  @override
+  void initState() {
+    super.initState();
+    _localSelected = List<String>.from(widget.selectedIds);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 12),
+          const Text('담당자 선택', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text('여러 명 선택 가능', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+          const Divider(height: 20),
+          if (widget.allUsers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(Icons.person_off_outlined, size: 40, color: Colors.grey.shade300),
+                  const SizedBox(height: 8),
+                  Text('등록된 사용자가 없습니다',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade400)),
+                ],
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5,
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.allUsers.length,
+                itemBuilder: (_, i) {
+                  final user = widget.allUsers[i];
+                  final isSelected = _localSelected.contains(user.id);
+                  return ListTile(
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: isSelected
+                          ? NotionTheme.accent
+                          : NotionTheme.accentLight,
+                      child: Text(
+                        user.name.isNotEmpty ? user.name[0] : '?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isSelected ? Colors.white : NotionTheme.accent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    title: Text(user.name,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: NotionTheme.textPrimary,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      )),
+                    trailing: isSelected
+                        ? const Icon(Icons.check_circle, color: NotionTheme.accent, size: 20)
+                        : Icon(Icons.radio_button_unchecked, color: Colors.grey.shade300, size: 20),
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _localSelected.remove(user.id);
+                        } else {
+                          _localSelected.add(user.id);
+                        }
+                      });
+                      widget.onToggle(user.id);
+                    },
+                  );
+                },
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: NotionTheme.accent,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 44),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                elevation: 0,
+              ),
+              child: Text(
+                _localSelected.isEmpty ? '선택 안 함' : '${_localSelected.length}명 선택 완료',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

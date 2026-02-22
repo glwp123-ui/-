@@ -17,11 +17,13 @@ class AppProvider extends ChangeNotifier {
 
   // ── 현재 로그인 사용자 정보 (담당자 필터링용) ───────
   String?  _currentUserName;  // displayName
+  String?  _currentUserId;    // user id
   bool     _isAdminOrAbove = true; // master/admin → 전체 보기, user → 본인 업무만
 
   /// AuthProvider에서 로그인 정보가 바뀔 때 호출
-  void setCurrentUser(String? displayName, bool isAdminOrAbove) {
+  void setCurrentUser(String? displayName, bool isAdminOrAbove, {String? userId}) {
     _currentUserName  = displayName;
+    _currentUserId    = userId;
     _isAdminOrAbove   = isAdminOrAbove;
     notifyListeners();
   }
@@ -51,11 +53,19 @@ class AppProvider extends ChangeNotifier {
   /// master/admin은 전체 표시
   bool _passesUserFilter(Task t) {
     if (_isAdminOrAbove) return true;
-    if (_currentUserName == null) return true;
-    // 담당자가 없으면 모든 사람에게 보임
-    if (t.assigneeName == null || t.assigneeName!.isEmpty) return true;
-    // 담당자가 있으면 본인 이름이 포함된 경우만 보임
-    return t.assigneeName! == _currentUserName;
+    // 담당자 없으면 모두에게 보임
+    final hasIds  = t.assigneeIds.isNotEmpty;
+    final hasName = t.assigneeName != null && t.assigneeName!.isNotEmpty;
+    if (!hasIds && !hasName) return true;
+    // assigneeIds 리스트에 현재 유저 ID 포함 여부
+    if (_currentUserId != null && hasIds) {
+      return t.assigneeIds.contains(_currentUserId);
+    }
+    // ID 없을 경우 이름으로 fallback
+    if (_currentUserName != null && hasName) {
+      return t.assigneeName! == _currentUserName;
+    }
+    return true;
   }
 
   // ── 필터링 ────────────────────────────────────────
@@ -175,13 +185,16 @@ class AppProvider extends ChangeNotifier {
     DateTime? startDate,
     DateTime? dueDate,
     String? assigneeName,
+    List<String>? assigneeIds,
   }) async {
+    final ids = assigneeIds ?? [];
     final data = await api.createTask({
       'title': title, 'description': description,
       'dept_id': departmentId,
       'status':   status.name,
       'priority': priority.name,
-      if (assigneeName != null) 'assignee_name': assigneeName,
+      if (assigneeName != null && assigneeName.isNotEmpty) 'assignee_name': assigneeName,
+      'assignee_ids': '[${ids.map((e) => '"$e"').join(',')}]',
       if (startDate != null) 'start_date': startDate.toIso8601String(),
       if (dueDate   != null) 'due_date':   dueDate.toIso8601String(),
     });
@@ -190,12 +203,14 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> updateTask(Task t) async {
+    final ids = t.assigneeIds;
     final data = await api.updateTask(t.id, {
       'title': t.title, 'description': t.description,
       'dept_id': t.departmentId,
       'status':   t.status.name,
       'priority': t.priority.name,
       'assignee_name': t.assigneeName,
+      'assignee_ids': '[${ids.map((e) => '"$e"').join(',')}]',
       if (t.startDate != null) 'start_date': t.startDate!.toIso8601String(),
       if (t.dueDate   != null) 'due_date':   t.dueDate!.toIso8601String(),
     });

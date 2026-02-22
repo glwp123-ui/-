@@ -90,14 +90,14 @@ class _RootRouterState extends State<_RootRouter> {
         // 담당자 필터 정보 주입: user 역할이면 본인 업무만, admin/master는 전체
         final user = auth.currentUser!;
         final isAdminOrAbove = user.role == UserRole.admin || user.role == UserRole.master;
-        appProv.setCurrentUser(user.displayName, isAdminOrAbove);
+        appProv.setCurrentUser(user.displayName, isAdminOrAbove, userId: user.id);
         appProv.load();
       });
     } else if (!auth.isLoggedIn) {
       _wasLoggedIn = false;
       // 로그아웃 시 필터 초기화
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        appProv.setCurrentUser(null, true);
+        appProv.setCurrentUser(null, true, userId: null);
       });
     }
 

@@ -99,6 +99,7 @@ class TaskCreate(BaseModel):
     status       : TaskStatus    = TaskStatus.notStarted
     priority     : TaskPriority  = TaskPriority.medium
     assignee_name: Optional[str] = None
+    assignee_ids : Optional[str] = None   # JSON: '["id1","id2"]'
     start_date   : Optional[datetime] = None
     due_date     : Optional[datetime] = None
 
@@ -109,6 +110,7 @@ class TaskUpdate(BaseModel):
     status       : Optional[TaskStatus]  = None
     priority     : Optional[TaskPriority]= None
     assignee_name: Optional[str]         = None
+    assignee_ids : Optional[str]         = None   # JSON: '["id1","id2"]'
     start_date   : Optional[datetime]    = None
     due_date     : Optional[datetime]    = None
 
@@ -120,6 +122,7 @@ class TaskOut(BaseModel):
     status       : TaskStatus
     priority     : TaskPriority
     assignee_name: Optional[str]
+    assignee_ids : Optional[str] = None   # JSON: '["id1","id2"]'
     start_date   : Optional[datetime]
     due_date     : Optional[datetime]
     created_at   : datetime
