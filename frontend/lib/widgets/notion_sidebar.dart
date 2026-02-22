@@ -7,6 +7,7 @@ import '../models/user_model.dart';
 import '../utils/notion_theme.dart';
 import '../screens/calendar_screen.dart';
 import '../screens/completed_history_screen.dart';
+import '../screens/daily_record_archive_screen.dart';
 import '../screens/daily_report_screen.dart';
 import '../screens/user_manage_screen.dart';
 import 'dept_form_sheet.dart';
@@ -158,6 +159,10 @@ class _NotionSidebarState extends State<NotionSidebar> {
             // ── 완료 업무 보관함 (마스터+관리자만)
             if (auth.canViewHistory)
               _HistoryButton(provider: provider),
+
+            // ── 일별 보관함 (마스터+관리자만)
+            if (auth.canViewHistory)
+              _DailyArchiveButton(provider: provider),
 
             const SizedBox(height: 4),
 
@@ -1060,4 +1065,62 @@ class _EmptyDeptHint extends StatelessWidget {
       ],
     ),
   );
+}
+
+// ── 일별 보관함 버튼 (마스터+관리자)
+class _DailyArchiveButton extends StatefulWidget {
+  final AppProvider provider;
+  const _DailyArchiveButton({required this.provider});
+
+  @override
+  State<_DailyArchiveButton> createState() => _DailyArchiveButtonState();
+}
+
+class _DailyArchiveButtonState extends State<_DailyArchiveButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit:  (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: () {
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => MultiProvider(
+              providers: [
+                ChangeNotifierProvider.value(value: widget.provider),
+                ChangeNotifierProvider.value(
+                  value: context.read<AuthProvider>()),
+              ],
+              child: const DailyRecordArchiveScreen(),
+            ),
+          ));
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          margin: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: _hover
+              ? const Color(0xFF4A3BB5).withValues(alpha: 0.9)
+              : const Color(0xFF6C5FD4).withValues(alpha: 0.75),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Row(
+            children: [
+              Text('📅', style: TextStyle(fontSize: 14)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('일별 보관함',
+                  style: TextStyle(color: Colors.white, fontSize: 13,
+                    fontWeight: FontWeight.w600)),
+              ),
+              Icon(Icons.chevron_right, size: 14, color: Colors.white70),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
