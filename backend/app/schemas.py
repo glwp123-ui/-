@@ -124,6 +124,8 @@ class TaskOut(BaseModel):
     due_date     : Optional[datetime]
     created_at   : datetime
     updated_at   : datetime
+    is_hidden    : bool = False
+    hidden_at    : Optional[datetime] = None
     reports      : list[ReportOut] = []
 
     model_config = {"from_attributes": True}

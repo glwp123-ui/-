@@ -138,6 +138,8 @@ class Task {
   DateTime? dueDate;
   String? assigneeName;
   List<TaskReport> reports; // 중간 보고 목록
+  bool isHidden;            // 보드에서 숨김 (보관함엔 유지)
+  DateTime? hiddenAt;       // 숨긴 일시
 
   Task({
     required this.id,
@@ -151,6 +153,8 @@ class Task {
     this.dueDate,
     this.assigneeName,
     List<TaskReport>? reports,
+    this.isHidden = false,
+    this.hiddenAt,
   }) : reports = reports ?? [];
 
   bool get isOverdue =>
@@ -204,6 +208,10 @@ class Task {
       reports: j['reports'] != null
           ? (j['reports'] as List).map((r) => TaskReport.fromJson(r)).toList()
           : [],
+      isHidden: j['is_hidden'] ?? false,
+      hiddenAt: (j['hidden_at']) != null
+          ? DateTime.parse(j['hidden_at'])
+          : null,
     );
   }
 }

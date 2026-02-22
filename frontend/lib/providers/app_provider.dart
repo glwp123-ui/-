@@ -187,6 +187,20 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 완료 업무를 보드에서 숨기기 (보관함엔 계속 표시)
+  Future<void> hideTask(String id) async {
+    final data = await api.hideTask(id);
+    final i = _tasks.indexWhere((t) => t.id == id);
+    if (i != -1) { _tasks[i] = Task.fromJson(data); notifyListeners(); }
+  }
+
+  /// 숨긴 업무 복원 (보드에 다시 표시)
+  Future<void> unhideTask(String id) async {
+    final data = await api.unhideTask(id);
+    final i = _tasks.indexWhere((t) => t.id == id);
+    if (i != -1) { _tasks[i] = Task.fromJson(data); notifyListeners(); }
+  }
+
   // ── Report CRUD ───────────────────────────────────
   Future<void> addReport(String taskId, {
     required String content, String? reporterName,
@@ -231,17 +245,19 @@ class AppProvider extends ChangeNotifier {
   List<Task> getCompletedTasks({
     String? deptId, DateTime? from, DateTime? to,
     String? keyword, TaskPriority? priority,
+    List<Task>? archiveTasks, // 보관함 전용 목록 (숨긴 항목 포함)
   }) {
-    return _tasks.where((t) {
+    final source = archiveTasks ?? _tasks;
+    return source.where((t) {
       if (t.status != TaskStatus.done) return false;
       if (deptId   != null && t.departmentId != deptId) return false;
       if (priority != null && t.priority     != priority) return false;
       if (from != null) {
-        final base = t.dueDate ?? t.createdAt;
+        final base = t.hiddenAt ?? t.dueDate ?? t.createdAt;
         if (base.isBefore(DateTime(from.year, from.month, from.day))) return false;
       }
       if (to != null) {
-        final base  = t.dueDate ?? t.createdAt;
+        final base  = t.hiddenAt ?? t.dueDate ?? t.createdAt;
         final toEnd = DateTime(to.year, to.month, to.day, 23, 59, 59);
         if (base.isAfter(toEnd)) return false;
       }
@@ -253,10 +269,16 @@ class AppProvider extends ChangeNotifier {
       }
       return true;
     }).toList()..sort((a, b) {
-      final ad = a.dueDate ?? a.createdAt;
-      final bd = b.dueDate ?? b.createdAt;
+      final ad = a.hiddenAt ?? a.dueDate ?? a.createdAt;
+      final bd = b.hiddenAt ?? b.dueDate ?? b.createdAt;
       return bd.compareTo(ad);
     });
+  }
+
+  /// 보관함용 완료 항목 서버에서 로드 (숨긴 항목 포함)
+  Future<List<Task>> loadArchive({String? deptId}) async {
+    final data = await api.getArchive(deptId: deptId);
+    return data.map((t) => Task.fromJson(t)).toList();
   }
 
   // ── 달력용 헬퍼 ──────────────────────────────────

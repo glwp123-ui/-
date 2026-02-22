@@ -216,11 +216,43 @@ class _TaskCard extends StatefulWidget {
 
 class _TaskCardState extends State<_TaskCard> {
   bool _hover = false;
+  bool _hiding = false;
+
+  Future<void> _hideTask(BuildContext context) async {
+    final provider = context.read<AppProvider>();
+    setState(() => _hiding = true);
+    try {
+      await provider.hideTask(widget.task.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('완료 업무를 보관함으로 이동했습니다'),
+            action: SnackBarAction(
+              label: '취소',
+              onPressed: () async {
+                await provider.unhideTask(widget.task.id);
+              },
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('오류: $e'), backgroundColor: Colors.red),
+        );
+        setState(() => _hiding = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.read<AppProvider>();
     final dept = provider.getDeptById(widget.task.departmentId);
+    final canManage = context.read<AuthProvider>().canManageTask;
+    final isDone = widget.task.status == TaskStatus.done;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -244,7 +276,7 @@ class _TaskCardState extends State<_TaskCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 우선순위 + 제목
+              // 우선순위 + 제목 + 숨기기 버튼
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -259,13 +291,42 @@ class _TaskCardState extends State<_TaskCard> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: widget.task.status == TaskStatus.done
+                        color: isDone
                           ? NotionTheme.textSecondary : NotionTheme.textPrimary,
-                        decoration: widget.task.status == TaskStatus.done
+                        decoration: isDone
                           ? TextDecoration.lineThrough : null,
                       ),
                     ),
                   ),
+                  // 완료 항목에만 숨기기 버튼 표시 (관리자/마스터, 호버 시)
+                  if (isDone && canManage && _hover && !_hiding)
+                    GestureDetector(
+                      onTap: () => _hideTask(context),
+                      child: Tooltip(
+                        message: '보관함으로 이동 (보드에서 숨김)',
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.archive_outlined, size: 11, color: Color(0xFF787774)),
+                              SizedBox(width: 3),
+                              Text('숨기기', style: TextStyle(fontSize: 10, color: Color(0xFF787774))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_hiding)
+                    const SizedBox(
+                      width: 14, height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                    ),
                 ],
               ),
 

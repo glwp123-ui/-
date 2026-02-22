@@ -22,14 +22,17 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 # ── 업무 목록 ──────────────────────────────────────────
 @router.get("/", response_model=list[TaskOut])
 async def list_tasks(
-    dept_id: str | None = Query(None),
-    status : str | None = Query(None),
-    _      : User       = Depends(get_current_user),
-    db     : AsyncSession = Depends(get_db),
+    dept_id    : str | None = Query(None),
+    status     : str | None = Query(None),
+    include_hidden: bool    = Query(False, description="True면 숨긴 항목도 포함"),
+    _          : User       = Depends(get_current_user),
+    db         : AsyncSession = Depends(get_db),
 ):
     q = select(Task).options(selectinload(Task.reports))
     if dept_id: q = q.where(Task.dept_id == dept_id)
     if status:  q = q.where(Task.status  == status)
+    if not include_hidden:
+        q = q.where(Task.is_hidden == False)
     q = q.order_by(Task.created_at.desc())
     result = await db.execute(q)
     return [TaskOut.model_validate(t) for t in result.scalars()]
@@ -120,7 +123,75 @@ async def update_status(
     return TaskOut.model_validate(result2.scalar_one())
 
 
-# ── 업무 삭제 ──────────────────────────────────────────
+# ── 완료 업무 숨기기 (보관함엔 유지) ─────────────────
+@router.patch("/{task_id}/hide", response_model=TaskOut)
+async def hide_task(
+    task_id: str,
+    current: User = Depends(get_current_user),
+    db     : AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
+    if task.status != TaskStatus.done:
+        raise HTTPException(status_code=400, detail="완료 상태인 업무만 숨길 수 있습니다.")
+    task.is_hidden  = True
+    task.hidden_at  = datetime.utcnow()
+    task.updated_at = datetime.utcnow()
+    await db.commit()
+    result2 = await db.execute(
+        select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
+    )
+    return TaskOut.model_validate(result2.scalar_one())
+
+
+# ── 숨긴 업무 복원 ─────────────────────────────────────
+@router.patch("/{task_id}/unhide", response_model=TaskOut)
+async def unhide_task(
+    task_id: str,
+    current: User = Depends(get_current_user),
+    db     : AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
+    task.is_hidden  = False
+    task.hidden_at  = None
+    task.updated_at = datetime.utcnow()
+    await db.commit()
+    result2 = await db.execute(
+        select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
+    )
+    return TaskOut.model_validate(result2.scalar_one())
+
+
+# ── 완료 업무 보관함 조회 (숨긴 항목 포함, 날짜별 정렬) ─
+@router.get("/archive", response_model=list[TaskOut])
+async def list_archive(
+    dept_id : str | None = Query(None),
+    _       : User        = Depends(get_current_user),
+    db      : AsyncSession = Depends(get_db),
+):
+    """완료된 모든 업무 (숨긴 것 포함) 최신순 반환"""
+    q = (
+        select(Task)
+        .options(selectinload(Task.reports))
+        .where(Task.status == TaskStatus.done)
+    )
+    if dept_id:
+        q = q.where(Task.dept_id == dept_id)
+    q = q.order_by(Task.updated_at.desc())
+    result = await db.execute(q)
+    return [TaskOut.model_validate(t) for t in result.scalars()]
+
+
+# ── 업무 삭제 (영구) ─────────────────────────────────────
 @router.delete("/{task_id}")
 async def delete_task(
     task_id: str,

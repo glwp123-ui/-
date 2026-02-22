@@ -12,13 +12,13 @@ const String _productionApiUrl = 'https://1-mgt1.onrender.com';
 const String _injectedApiUrl = String.fromEnvironment('API_BASE_URL', defaultValue: '');
 
 String get _base {
-  // 1순위: 빌드 시 주입된 URL
   if (_injectedApiUrl.isNotEmpty) return _injectedApiUrl;
-  // 2순위: 프로덕션 고정 URL (웹 배포 시)
   if (kIsWeb) return _productionApiUrl;
-  // 3순위: 로컬 개발
   return 'http://localhost:8000';
 }
+
+// Render 무료 플랜 슬립 모드 대응 - 타임아웃 60초
+const _kTimeout = Duration(seconds: 60);
 
 class ApiException implements Exception {
   final int statusCode;
@@ -30,6 +30,7 @@ class ApiException implements Exception {
 
 class ApiService {
   String? _token;
+  bool _serverAwake = false; // 서버 깨어있는지 여부
 
   void setToken(String? token) => _token = token;
   String? get token => _token;
@@ -40,12 +41,21 @@ class ApiService {
     if (_token != null) 'Authorization': 'Bearer $_token',
   };
 
+  // 서버 워밍업 (Render 슬립 모드 해제)
+  Future<void> wakeUp() async {
+    if (_serverAwake) return;
+    try {
+      await http.get(Uri.parse('$_base/health'))
+          .timeout(const Duration(seconds: 60));
+      _serverAwake = true;
+    } catch (_) {}
+  }
+
   // ── Generic HTTP 메서드 ─────────────────────────────
   Future<dynamic> get(String path, {Map<String, String>? query}) async {
     var uri = Uri.parse('$_base$path');
     if (query != null) uri = uri.replace(queryParameters: query);
-    final res = await http.get(uri, headers: _headers)
-        .timeout(const Duration(seconds: 15));
+    final res = await http.get(uri, headers: _headers).timeout(_kTimeout);
     return _parse(res);
   }
 
@@ -54,7 +64,7 @@ class ApiService {
       Uri.parse('$_base$path'),
       headers: _headers,
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(_kTimeout);
     return _parse(res);
   }
 
@@ -63,13 +73,13 @@ class ApiService {
       Uri.parse('$_base$path'),
       headers: _headers,
       body: jsonEncode(body),
-    ).timeout(const Duration(seconds: 15));
+    ).timeout(_kTimeout);
     return _parse(res);
   }
 
   Future<dynamic> delete(String path) async {
     final res = await http.delete(Uri.parse('$_base$path'), headers: _headers)
-        .timeout(const Duration(seconds: 15));
+        .timeout(_kTimeout);
     return _parse(res);
   }
 
@@ -105,7 +115,10 @@ class ApiService {
   }
 
   // ── Users ───────────────────────────────────────────
-  Future<List<dynamic>> getUsers() => get('/users/') as Future<List<dynamic>>;
+  Future<List<dynamic>> getUsers() async {
+    final data = await get('/users/');
+    return List<dynamic>.from(data as List);
+  }
 
   Future<Map<String, dynamic>> createUser(Map<String, dynamic> body) async =>
       await post('/users/', body);
@@ -116,7 +129,10 @@ class ApiService {
   Future<void> deleteUser(String id) => delete('/users/$id');
 
   // ── Departments ─────────────────────────────────────
-  Future<List<dynamic>> getDepts() => get('/departments/') as Future<List<dynamic>>;
+  Future<List<dynamic>> getDepts() async {
+    final data = await get('/departments/');
+    return List<dynamic>.from(data as List);
+  }
 
   Future<Map<String, dynamic>> createDept(Map<String, dynamic> body) async =>
       await post('/departments/', body);
@@ -127,11 +143,13 @@ class ApiService {
   Future<void> deleteDept(String id) => delete('/departments/$id');
 
   // ── Tasks ───────────────────────────────────────────
-  Future<List<dynamic>> getTasks({String? deptId, String? status}) =>
-      get('/tasks/', query: {
-        if (deptId != null) 'dept_id': deptId,
-        if (status  != null) 'status': status,
-      }) as Future<List<dynamic>>;
+  Future<List<dynamic>> getTasks({String? deptId, String? status}) async {
+    final data = await get('/tasks/', query: {
+      if (deptId != null) 'dept_id': deptId,
+      if (status  != null) 'status': status,
+    });
+    return List<dynamic>.from(data as List);
+  }
 
   Future<Map<String, dynamic>> createTask(Map<String, dynamic> body) async =>
       await post('/tasks/', body);
@@ -143,6 +161,22 @@ class ApiService {
       await patch('/tasks/$id/status', {'status': status});
 
   Future<void> deleteTask(String id) => delete('/tasks/$id');
+
+  /// 완료 업무를 보드에서 숨기기 (보관함엔 유지)
+  Future<Map<String, dynamic>> hideTask(String id) async =>
+      await patch('/tasks/$id/hide', {});
+
+  /// 숨긴 업무 복원
+  Future<Map<String, dynamic>> unhideTask(String id) async =>
+      await patch('/tasks/$id/unhide', {});
+
+  /// 완료 보관함 조회 (숨긴 항목 포함)
+  Future<List<dynamic>> getArchive({String? deptId}) async {
+    final data = await get('/tasks/archive', query: {
+      if (deptId != null) 'dept_id': deptId,
+    });
+    return List<dynamic>.from(data as List);
+  }
 
   // ── Reports ─────────────────────────────────────────
   Future<Map<String, dynamic>> addReport(
@@ -160,8 +194,10 @@ class ApiService {
       delete('/tasks/$taskId/reports/$reportId');
 
   // ── Daily Report ────────────────────────────────────
-  Future<List<dynamic>> getDailyReport(String date) =>
-      get('/tasks/daily-report', query: {'date': date}) as Future<List<dynamic>>;
+  Future<List<dynamic>> getDailyReport(String date) async {
+    final data = await get('/tasks/daily-report', query: {'date': date});
+    return List<dynamic>.from(data as List);
+  }
 }
 
 // 싱글톤

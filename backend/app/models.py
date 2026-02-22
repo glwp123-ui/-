@@ -71,6 +71,8 @@ class Task(Base):
     assignee_name: Mapped[str | None]   = mapped_column(String(100), nullable=True)
     start_date   : Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_date     : Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_hidden    : Mapped[bool] = mapped_column(Boolean, default=False)  # 완료 후 보드에서 숨김 (보관함엔 유지)
+    hidden_at    : Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 숨긴 일시
     created_at   : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at   : Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
