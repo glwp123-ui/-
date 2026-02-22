@@ -55,6 +55,22 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
         return Scaffold(
           backgroundColor: const Color(0xFFF7F7F5),
+          floatingActionButton: Consumer<AuthProvider>(
+            builder: (ctx, auth, _) {
+              if (!auth.canManageTask) return const SizedBox.shrink();
+              return FloatingActionButton.extended(
+                onPressed: () => showNewTaskForm(
+                  context,
+                  preselectedDueDate: _selectedDay,
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('새 업무', style: TextStyle(fontSize: 13)),
+                backgroundColor: NotionTheme.accent,
+                foregroundColor: Colors.white,
+                elevation: 3,
+              );
+            },
+          ),
           appBar: AppBar(
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.transparent,
@@ -111,6 +127,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           _selectedDay = (_selectedDay != null &&
                             _isSameDay(_selectedDay!, day)) ? null : day;
                         }),
+                        onDayLongPress: context.read<AuthProvider>().canManageTask
+                          ? (day) {
+                              setState(() => _selectedDay = day);
+                              showNewTaskForm(context, preselectedDueDate: day);
+                            }
+                          : null,
                       ),
                     ),
                     const VerticalDivider(width: 1),
@@ -123,6 +145,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
                             date: _selectedDay!,
                             tasks: selectedTasks,
                             provider: provider,
+                            onAddTask: () => showNewTaskForm(
+                              context,
+                              preselectedDueDate: _selectedDay,
+                            ),
                           ),
                     ),
                   ],
@@ -142,6 +168,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       _selectedDay = (_selectedDay != null &&
                         _isSameDay(_selectedDay!, day)) ? null : day;
                     }),
+                    onDayLongPress: context.read<AuthProvider>().canManageTask
+                      ? (day) {
+                          setState(() => _selectedDay = day);
+                          showNewTaskForm(context, preselectedDueDate: day);
+                        }
+                      : null,
                   ),
                   const Divider(height: 1),
                   Expanded(
@@ -177,6 +209,7 @@ class _CalendarGrid extends StatelessWidget {
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final void Function(DateTime) onDayTap;
+  final void Function(DateTime)? onDayLongPress;
 
   const _CalendarGrid({
     required this.focusedMonth,
@@ -185,6 +218,7 @@ class _CalendarGrid extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onDayTap,
+    this.onDayLongPress,
   });
 
   bool _isSameDay(DateTime a, DateTime b) =>
@@ -288,6 +322,9 @@ class _CalendarGrid extends StatelessWidget {
                       return Expanded(
                         child: GestureDetector(
                           onTap: () => onDayTap(date),
+                          onLongPress: onDayLongPress != null
+                            ? () => onDayLongPress!(date)
+                            : null,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 130),
                             constraints: const BoxConstraints(minHeight: 72),
@@ -697,8 +734,14 @@ class _DayPanel extends StatelessWidget {
   final DateTime date;
   final List<Task> tasks;
   final AppProvider provider;
+  final VoidCallback? onAddTask;
 
-  const _DayPanel({required this.date, required this.tasks, required this.provider});
+  const _DayPanel({
+    required this.date,
+    required this.tasks,
+    required this.provider,
+    this.onAddTask,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -708,6 +751,7 @@ class _DayPanel extends StatelessWidget {
     final isPast = date.isBefore(DateTime(today.year, today.month, today.day));
     final wd = ['일','월','화','수','목','금','토'][date.weekday % 7];
     final overdueCount = tasks.where((t) => t.isOverdue).length;
+    final auth = context.read<AuthProvider>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,6 +779,27 @@ class _DayPanel extends StatelessWidget {
                     style: const TextStyle(fontSize: 11, color: Color(0xFFEB5757))),
               ]),
               const Spacer(),
+              // 새 업무 추가 버튼 (관리자 이상)
+              if (auth.canManageTask && onAddTask != null) ...[
+                GestureDetector(
+                  onTap: onAddTask,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: NotionTheme.accent,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.add, size: 14, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text('새 업무', style: TextStyle(
+                        fontSize: 12, color: Colors.white,
+                        fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
@@ -769,6 +834,27 @@ class _DayPanel extends StatelessWidget {
                     const SizedBox(height: 4),
                     const Text('업무의 시작일 또는 마감일로 설정하면 표시됩니다',
                       style: TextStyle(color: NotionTheme.textMuted, fontSize: 11)),
+                    if (auth.canManageTask && onAddTask != null) ...[
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                        onTap: onAddTask,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: NotionTheme.accent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.add, size: 16, color: Colors.white),
+                            SizedBox(width: 6),
+                            Text('이 날짜로 새 업무 추가',
+                              style: TextStyle(fontSize: 13, color: Colors.white,
+                                fontWeight: FontWeight.bold)),
+                          ]),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               )

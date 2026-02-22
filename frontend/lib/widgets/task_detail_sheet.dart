@@ -746,7 +746,12 @@ class _PriorityChip extends StatelessWidget {
 class _TaskFormPage extends StatefulWidget {
   final Task? task;
   final String? preselectedDeptId;
-  const _TaskFormPage({this.task, this.preselectedDeptId});
+  final DateTime? preselectedDueDate;
+  const _TaskFormPage({
+    this.task,
+    this.preselectedDeptId,
+    this.preselectedDueDate,
+  });
 
   @override
   State<_TaskFormPage> createState() => _TaskFormPageState();
@@ -756,12 +761,11 @@ class _TaskFormPageState extends State<_TaskFormPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _titleCtrl;
   late TextEditingController _descCtrl;
-  String? _deptId;
+  List<String> _deptIds = [];   // 다중 부서
   TaskStatus _status = TaskStatus.notStarted;
   TaskPriority _priority = TaskPriority.medium;
   DateTime? _startDate;
   DateTime? _dueDate;
-  // 다중 담당자 - 선택된 이름 목록
   List<String> _selectedNames = [];
 
   @override
@@ -770,11 +774,13 @@ class _TaskFormPageState extends State<_TaskFormPage> {
     final t = widget.task;
     _titleCtrl = TextEditingController(text: t?.title ?? '');
     _descCtrl  = TextEditingController(text: t?.description ?? '');
-    _deptId    = t?.departmentId ?? widget.preselectedDeptId;
+    _deptIds   = t != null
+        ? List<String>.from(t.departmentIds)
+        : (widget.preselectedDeptId != null ? [widget.preselectedDeptId!] : []);
     _status    = t?.status   ?? TaskStatus.notStarted;
     _priority  = t?.priority ?? TaskPriority.medium;
     _startDate = t?.startDate;
-    _dueDate   = t?.dueDate;
+    _dueDate   = t?.dueDate ?? widget.preselectedDueDate;
     _selectedNames = List<String>.from(t?.assigneeNames ?? []);
   }
 
@@ -828,11 +834,11 @@ class _TaskFormPageState extends State<_TaskFormPage> {
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 12),
-            _FormPropRow(label: '부서', child: _DeptSelector(
-              depts: provider.departments,
-              selected: _deptId,
-              onChanged: (id) => setState(() => _deptId = id),
-            )),
+            _MultiDeptSelector(
+              allDepts: provider.departments,
+              selectedIds: _deptIds,
+              onChanged: (ids) => setState(() => _deptIds = ids),
+            ),
             _FormPropRow(label: '상태', child: _DropdownChips<TaskStatus>(
               values: TaskStatus.values,
               selected: _status,
@@ -849,13 +855,6 @@ class _TaskFormPageState extends State<_TaskFormPage> {
               bgColor: (_) => NotionTheme.surface,
               onChanged: (p) => setState(() => _priority = p),
             )),
-            // ── 부서별 담당자 선택 ─────────────────────────
-            _AssigneeByDeptRow(
-              allDepts: provider.departments,
-              allUsers: _getAllUsers(),
-              selectedNames: _selectedNames,
-              onChanged: (names) => setState(() => _selectedNames = names),
-            ),
             // 시작일
             _FormPropRow(label: '시작일', child: _DatePickerBtn(
               date: _startDate,
@@ -892,7 +891,11 @@ class _TaskFormPageState extends State<_TaskFormPage> {
 
   List<AppUser> _getAllUsers() {
     try {
-      return context.read<AuthProvider>().users;
+      return context.read<AuthProvider>().users
+          .where((u) => u.role != UserRole.master &&
+                        u.departmentId != null &&
+                        u.departmentId!.isNotEmpty)
+          .toList();
     } catch (_) {
       return [];
     }
@@ -900,18 +903,21 @@ class _TaskFormPageState extends State<_TaskFormPage> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_deptId == null) {
+    if (_deptIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('부서를 선택해주세요'), backgroundColor: Colors.red),
       );
       return;
     }
     final provider = context.read<AppProvider>();
+    // 첫 번째 부서 ID를 기본 departmentId로 사용 (백엔드 호환)
+    final primaryDeptId = _deptIds.first;
     if (widget.task != null) {
       final t = widget.task!;
       t.title        = _titleCtrl.text.trim();
       t.description  = _descCtrl.text.trim();
-      t.departmentId = _deptId!;
+      t.departmentId = primaryDeptId;
+      t.departmentIds = List<String>.from(_deptIds);
       t.status       = _status;
       t.priority     = _priority;
       t.startDate    = _startDate;
@@ -922,7 +928,8 @@ class _TaskFormPageState extends State<_TaskFormPage> {
       await provider.addTask(
         title: _titleCtrl.text.trim(),
         description: _descCtrl.text.trim(),
-        departmentId: _deptId!,
+        departmentId: primaryDeptId,
+        departmentIds: _deptIds,
         status: _status, priority: _priority,
         startDate: _startDate,
         dueDate: _dueDate,
@@ -1087,36 +1094,39 @@ class _AssigneeByDeptSheet extends StatefulWidget {
 }
 
 class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
-  late Set<String> _selected; // displayName 집합
+  late List<String> _selected; // 선택된 이름 목록 (중복 허용)
 
   @override
   void initState() {
     super.initState();
-    _selected = Set<String>.from(widget.selectedNames);
+    _selected = List<String>.from(widget.selectedNames);
   }
 
-  void _toggle(String name) {
+  // 추가 (중복 허용)
+  void _add(String name) {
+    setState(() => _selected.add(name));
+  }
+
+  // 마지막으로 추가된 항목 하나 제거
+  void _remove(String name) {
     setState(() {
-      if (_selected.contains(name)) {
-        _selected.remove(name);
-      } else {
-        _selected.add(name);
-      }
+      final idx = _selected.lastIndexOf(name);
+      if (idx != -1) _selected.removeAt(idx);
     });
   }
+
+  bool _contains(String name) => _selected.contains(name);
+
+  int _countOf(String name) => _selected.where((e) => e == name).length;
 
   @override
   Widget build(BuildContext context) {
     // 부서별로 사용자 그룹화
     final Map<String, List<AppUser>> byDept = {};
-    final List<AppUser> noDept = [];
-
     for (final u in widget.allUsers) {
       if (!u.isActive) continue;
       if (u.departmentId != null && u.departmentId!.isNotEmpty) {
         byDept.putIfAbsent(u.departmentId!, () => []).add(u);
-      } else {
-        noDept.add(u);
       }
     }
 
@@ -1147,7 +1157,7 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
                       color: NotionTheme.accent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text('${_selected.length}명 선택',
+                    child: Text('${_selected.length}개 선택',
                       style: const TextStyle(fontSize: 12, color: NotionTheme.accent, fontWeight: FontWeight.w600)),
                   ),
               ],
@@ -1157,25 +1167,22 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
             padding: const EdgeInsets.only(left: 20, top: 4, bottom: 8),
             child: Align(
               alignment: Alignment.centerLeft,
-              child: Text('부서별로 여러 명 선택 가능',
+              child: Text('부서 또는 개인을 중복 선택 가능',
                 style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
             ),
           ),
           const Divider(height: 1),
           // 목록
           Expanded(
-            child: widget.allUsers.isEmpty
+            child: widget.allDepts.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person_off_outlined, size: 48, color: Colors.grey.shade300),
+                        Icon(Icons.business_outlined, size: 48, color: Colors.grey.shade300),
                         const SizedBox(height: 12),
-                        Text('등록된 사용자가 없습니다',
+                        Text('등록된 부서가 없습니다',
                           style: TextStyle(fontSize: 14, color: Colors.grey.shade400)),
-                        const SizedBox(height: 6),
-                        Text('계정 관리에서 사용자를 추가해주세요',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
                       ],
                     ),
                   )
@@ -1183,26 +1190,23 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
                     controller: scrollCtrl,
                     padding: const EdgeInsets.only(bottom: 16),
                     children: [
-                      // 부서별 섹션
-                      for (final dept in widget.allDepts)
-                        if (byDept.containsKey(dept.id)) ...[
-                          _DeptHeader(emoji: dept.emoji, name: dept.name),
+                      for (final dept in widget.allDepts) ...[
+                        // ── 부서 행 (부서명 자체 선택) ──
+                        _DeptSelectTile(
+                          dept: dept,
+                          count: _countOf(dept.name),
+                          onAdd: () => _add(dept.name),
+                          onRemove: () => _remove(dept.name),
+                        ),
+                        // ── 소속 인원 ──
+                        if (byDept.containsKey(dept.id))
                           for (final u in byDept[dept.id]!)
-                            _UserTile(
-                              user: u,
-                              isSelected: _selected.contains(u.displayName),
-                              onTap: () => _toggle(u.displayName),
+                            _PersonTile(
+                              name: u.displayName,
+                              count: _countOf(u.displayName),
+                              onAdd: () => _add(u.displayName),
+                              onRemove: () => _remove(u.displayName),
                             ),
-                        ],
-                      // 부서 미지정 사용자
-                      if (noDept.isNotEmpty) ...[
-                        _DeptHeader(emoji: '👤', name: '부서 미지정'),
-                        for (final u in noDept)
-                          _UserTile(
-                            user: u,
-                            isSelected: _selected.contains(u.displayName),
-                            onTap: () => _toggle(u.displayName),
-                          ),
                       ],
                     ],
                   ),
@@ -1213,7 +1217,7 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: ElevatedButton(
                 onPressed: () {
-                  widget.onConfirm(_selected.toList());
+                  widget.onConfirm(_selected);
                   Navigator.pop(context);
                 },
                 style: ElevatedButton.styleFrom(
@@ -1224,7 +1228,7 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
                   elevation: 0,
                 ),
                 child: Text(
-                  _selected.isEmpty ? '담당자 없이 저장' : '${_selected.length}명 선택 완료',
+                  _selected.isEmpty ? '담당자 없이 저장' : '${_selected.length}개 선택 완료',
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
               ),
@@ -1236,7 +1240,191 @@ class _AssigneeByDeptSheetState extends State<_AssigneeByDeptSheet> {
   }
 }
 
-// ── 부서 헤더 ──────────────────────────────────────
+// ── 부서 선택 타일 (부서명 자체를 담당자로 추가/제거) ──
+class _DeptSelectTile extends StatelessWidget {
+  final Department dept;
+  final int count;       // 현재 선택된 횟수
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+  const _DeptSelectTile({
+    required this.dept, required this.count,
+    required this.onAdd, required this.onRemove,
+  });
+
+  static const _colors = [
+    Color(0xFF2383E2), Color(0xFF0F7B6C), Color(0xFF6C5FD4),
+    Color(0xFFEB5757), Color(0xFFCB912F), Color(0xFF4CAF50),
+    Color(0xFF9C27B0), Color(0xFF00796B),
+  ];
+  Color get _color => dept.name.isEmpty ? _colors[0]
+      : _colors[dept.name.codeUnitAt(0) % _colors.length];
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _color;
+    final selected = count > 0;
+    return Container(
+      color: selected ? c.withValues(alpha: 0.06) : null,
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+        leading: Container(
+          width: 32, height: 32,
+          decoration: BoxDecoration(
+            color: selected ? c.withValues(alpha: 0.15) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(dept.emoji, style: const TextStyle(fontSize: 16)),
+          ),
+        ),
+        title: Text(
+          dept.name,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+            color: selected ? c : const Color(0xFF1A1A1A),
+          ),
+        ),
+        subtitle: Text('부서 전체', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.remove, size: 16, color: Colors.black54),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(
+                  color: c.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: Text('$count',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: c)),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            GestureDetector(
+              onTap: onAdd,
+              child: Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(
+                  color: c.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.add, size: 16, color: c),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 개인 선택 타일 (인원 이름 추가/제거) ──────────────
+class _PersonTile extends StatelessWidget {
+  final String name;
+  final int count;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+  const _PersonTile({
+    required this.name, required this.count,
+    required this.onAdd, required this.onRemove,
+  });
+
+  static const _colors = [
+    Color(0xFF2383E2), Color(0xFF0F7B6C), Color(0xFF6C5FD4),
+    Color(0xFFEB5757), Color(0xFFCB912F), Color(0xFF4CAF50),
+    Color(0xFF9C27B0), Color(0xFF00796B),
+  ];
+  Color get _color => name.isEmpty ? _colors[0]
+      : _colors[name.codeUnitAt(0) % _colors.length];
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _color;
+    final selected = count > 0;
+    return Container(
+      color: selected ? c.withValues(alpha: 0.04) : null,
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 52, right: 20),
+        leading: CircleAvatar(
+          radius: 14, backgroundColor: selected ? c : Colors.grey.shade300,
+          child: Text(
+            name.isNotEmpty ? name[0] : '?',
+            style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+        title: Text(
+          name,
+          style: TextStyle(
+            fontSize: 13,
+            color: selected ? c : const Color(0xFF444444),
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 26, height: 26,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.remove, size: 14, color: Colors.black54),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                width: 26, height: 26,
+                decoration: BoxDecoration(
+                  color: c.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: Text('$count',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: c)),
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            GestureDetector(
+              onTap: onAdd,
+              child: Container(
+                width: 26, height: 26,
+                decoration: BoxDecoration(
+                  color: c.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(Icons.add, size: 14, color: c),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 부서 헤더 (레거시 - 미사용) ──────────────────────
 class _DeptHeader extends StatelessWidget {
   final String emoji;
   final String name;
@@ -1395,6 +1583,372 @@ class _DatePickerBtn extends StatelessWidget {
   }
 }
 
+// ── 다중 부서 선택 Row (폼에서 사용) ──────────────────
+class _MultiDeptSelector extends StatelessWidget {
+  final List<Department> allDepts;
+  final List<String> selectedIds;
+  final ValueChanged<List<String>> onChanged;
+
+  const _MultiDeptSelector({
+    required this.allDepts,
+    required this.selectedIds,
+    required this.onChanged,
+  });
+
+  static const _colors = [
+    Color(0xFF2383E2), Color(0xFF0F7B6C), Color(0xFF6C5FD4),
+    Color(0xFFEB5757), Color(0xFFCB912F), Color(0xFF4CAF50),
+    Color(0xFF9C27B0), Color(0xFF00796B),
+  ];
+  Color _color(String name) =>
+      name.isEmpty ? _colors[0] : _colors[name.codeUnitAt(0) % _colors.length];
+
+  Department? _deptById(String id) {
+    try { return allDepts.firstWhere((d) => d.id == id); } catch (_) { return null; }
+  }
+
+  void _openPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _MultiDeptPickerSheet(
+        allDepts: allDepts,
+        selectedIds: selectedIds,
+        onConfirm: onChanged,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(
+            width: 72,
+            child: Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text('부서', style: TextStyle(fontSize: 13, color: NotionTheme.textSecondary)),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 선택된 부서 칩
+                if (selectedIds.isNotEmpty)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: selectedIds.map((id) {
+                      final dept = _deptById(id);
+                      final name = dept?.name ?? id;
+                      final emoji = dept?.emoji ?? '📁';
+                      final c = _color(name);
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: c.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: c.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(emoji, style: const TextStyle(fontSize: 12)),
+                          const SizedBox(width: 4),
+                          Text(name, style: TextStyle(fontSize: 13, color: c, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 3),
+                          GestureDetector(
+                            onTap: () {
+                              final next = List<String>.from(selectedIds);
+                              final idx = next.lastIndexOf(id);
+                              if (idx != -1) next.removeAt(idx);
+                              onChanged(next);
+                            },
+                            child: Icon(Icons.close, size: 13, color: c.withValues(alpha: 0.6)),
+                          ),
+                        ]),
+                      );
+                    }).toList(),
+                  ),
+                const SizedBox(height: 6),
+                GestureDetector(
+                  onTap: () => _openPicker(context),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: NotionTheme.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: NotionTheme.border),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.business_outlined, size: 15, color: NotionTheme.textSecondary),
+                      const SizedBox(width: 5),
+                      Text(
+                        selectedIds.isEmpty ? '부서 선택' : '부서 추가/변경',
+                        style: const TextStyle(fontSize: 13, color: NotionTheme.textSecondary),
+                      ),
+                    ]),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 다중 부서 선택 바텀시트 ──────────────────────────
+class _MultiDeptPickerSheet extends StatefulWidget {
+  final List<Department> allDepts;
+  final List<String> selectedIds;
+  final ValueChanged<List<String>> onConfirm;
+
+  const _MultiDeptPickerSheet({
+    required this.allDepts,
+    required this.selectedIds,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_MultiDeptPickerSheet> createState() => _MultiDeptPickerSheetState();
+}
+
+class _MultiDeptPickerSheetState extends State<_MultiDeptPickerSheet> {
+  late List<String> _selected;
+
+  // 전체 부서를 나타내는 가상 ID
+  static const _allId = '__ALL__';
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = List<String>.from(widget.selectedIds);
+  }
+
+  bool get _isAllSelected => _selected.length == 1 && _selected.first == _allId;
+
+  void _add(String id) => setState(() => _selected.add(id));
+  void _removeLast(String id) {
+    setState(() {
+      final idx = _selected.lastIndexOf(id);
+      if (idx != -1) _selected.removeAt(idx);
+    });
+  }
+  int _countOf(String id) => _selected.where((e) => e == id).length;
+
+  void _selectAll() {
+    setState(() {
+      _selected = [_allId];
+    });
+  }
+
+  static const _colors = [
+    Color(0xFF2383E2), Color(0xFF0F7B6C), Color(0xFF6C5FD4),
+    Color(0xFFEB5757), Color(0xFFCB912F), Color(0xFF4CAF50),
+    Color(0xFF9C27B0), Color(0xFF00796B),
+  ];
+  Color _color(String name) =>
+      name.isEmpty ? _colors[0] : _colors[name.codeUnitAt(0) % _colors.length];
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Container(width: 36, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                const Text('부서 선택', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (_selected.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: NotionTheme.accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      _isAllSelected ? '전체 선택됨' : '${_selected.length}개 선택',
+                      style: const TextStyle(fontSize: 12, color: NotionTheme.accent, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 20, top: 4, bottom: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('부서를 중복 선택할 수 있습니다',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: ListView(
+              controller: scrollCtrl,
+              padding: const EdgeInsets.only(bottom: 16),
+              children: [
+                // ── 전체 부서 항목
+                _DeptPickerTile(
+                  emoji: '🏢',
+                  name: '전체',
+                  color: const Color(0xFF2383E2),
+                  count: _isAllSelected ? 1 : 0,
+                  onAdd: _selectAll,
+                  onRemove: () => setState(() => _selected.remove(_allId)),
+                  subtitle: '모든 부서 포함',
+                ),
+                const Divider(height: 1, indent: 20),
+                // ── 개별 부서 항목들
+                for (final dept in widget.allDepts)
+                  _DeptPickerTile(
+                    emoji: dept.emoji,
+                    name: dept.name,
+                    color: _color(dept.name),
+                    count: _countOf(dept.id),
+                    onAdd: () {
+                      // 전체 선택 해제 후 개별 추가
+                      if (_isAllSelected) setState(() => _selected.clear());
+                      _add(dept.id);
+                    },
+                    onRemove: () => _removeLast(dept.id),
+                  ),
+              ],
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: ElevatedButton(
+                onPressed: () {
+                  widget.onConfirm(_selected);
+                  Navigator.pop(context);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: NotionTheme.accent,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 46),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                ),
+                child: Text(
+                  _selected.isEmpty ? '선택 없이 저장' :
+                  _isAllSelected ? '전체 부서로 저장' : '${_selected.length}개 선택 완료',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── 부서 피커 타일 ──────────────────────────────────
+class _DeptPickerTile extends StatelessWidget {
+  final String emoji;
+  final String name;
+  final Color color;
+  final int count;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+  final String? subtitle;
+
+  const _DeptPickerTile({
+    required this.emoji, required this.name, required this.color,
+    required this.count, required this.onAdd, required this.onRemove,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = count > 0;
+    return Container(
+      color: selected ? color.withValues(alpha: 0.05) : null,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        leading: Container(
+          width: 36, height: 36,
+          decoration: BoxDecoration(
+            color: selected ? color.withValues(alpha: 0.15) : Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Center(child: Text(emoji, style: const TextStyle(fontSize: 18))),
+        ),
+        title: Text(name, style: TextStyle(
+          fontSize: 14,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+          color: selected ? color : const Color(0xFF1A1A1A),
+        )),
+        subtitle: subtitle != null
+            ? Text(subtitle!, style: TextStyle(fontSize: 11, color: Colors.grey.shade500))
+            : null,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected) ...[
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.remove, size: 16, color: Colors.black54),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(child: Text('$count',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: color))),
+              ),
+              const SizedBox(width: 8),
+            ],
+            GestureDetector(
+              onTap: onAdd,
+              child: Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.add, size: 16, color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DeptSelector extends StatelessWidget {
   final List depts;
   final String? selected;
@@ -1484,14 +2038,50 @@ class _DropdownChips<T> extends StatelessWidget {
   );
 }
 
+// ── 달력에서 신규 업무 폼 바텀시트 열기 (날짜 미리 세팅)
+void showNewTaskForm(BuildContext context, {DateTime? preselectedDueDate}) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (_) => MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: context.read<AppProvider>()),
+        ChangeNotifierProvider.value(value: context.read<AuthProvider>()),
+      ],
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.92,
+        minChildSize: 0.5,
+        maxChildSize: 0.97,
+        builder: (_, sc) => _TaskFormPage(
+          preselectedDueDate: preselectedDueDate,
+        ),
+      ),
+    ),
+  );
+}
+
 // export form page for use across screens
 class TaskFormPage extends StatelessWidget {
   final Task? task;
   final String? preselectedDeptId;
-  const TaskFormPage({super.key, this.task, this.preselectedDeptId});
+  final DateTime? preselectedDueDate;
+  const TaskFormPage({
+    super.key,
+    this.task,
+    this.preselectedDeptId,
+    this.preselectedDueDate,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return _TaskFormPage(task: task, preselectedDeptId: preselectedDeptId);
+    return _TaskFormPage(
+      task: task,
+      preselectedDeptId: preselectedDeptId,
+      preselectedDueDate: preselectedDueDate,
+    );
   }
 }
