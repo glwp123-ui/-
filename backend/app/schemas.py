@@ -93,43 +93,46 @@ class ReportOut(BaseModel):
 
 # ── Task ───────────────────────────────────────────────
 class TaskCreate(BaseModel):
-    title        : str
-    description  : str = ""
-    dept_id      : str
-    status       : TaskStatus    = TaskStatus.notStarted
-    priority     : TaskPriority  = TaskPriority.medium
-    assignee_name: Optional[str] = None
-    assignee_ids : Optional[str] = None   # JSON: '["id1","id2"]'
-    start_date   : Optional[datetime] = None
-    due_date     : Optional[datetime] = None
+    title          : str
+    description    : str = ""
+    dept_id        : str
+    department_ids : Optional[str] = None   # JSON: '["dept1","dept2"]' or '["__ALL__"]'
+    status         : TaskStatus    = TaskStatus.notStarted
+    priority       : TaskPriority  = TaskPriority.medium
+    assignee_name  : Optional[str] = None
+    assignee_ids   : Optional[str] = None   # JSON: '["id1","id2"]'
+    start_date     : Optional[datetime] = None
+    due_date       : Optional[datetime] = None
 
 class TaskUpdate(BaseModel):
-    title        : Optional[str]         = None
-    description  : Optional[str]         = None
-    dept_id      : Optional[str]         = None
-    status       : Optional[TaskStatus]  = None
-    priority     : Optional[TaskPriority]= None
-    assignee_name: Optional[str]         = None
-    assignee_ids : Optional[str]         = None   # JSON: '["id1","id2"]'
-    start_date   : Optional[datetime]    = None
-    due_date     : Optional[datetime]    = None
+    title          : Optional[str]         = None
+    description    : Optional[str]         = None
+    dept_id        : Optional[str]         = None
+    department_ids : Optional[str]         = None
+    status         : Optional[TaskStatus]  = None
+    priority       : Optional[TaskPriority]= None
+    assignee_name  : Optional[str]         = None
+    assignee_ids   : Optional[str]         = None   # JSON: '["id1","id2"]'
+    start_date     : Optional[datetime]    = None
+    due_date       : Optional[datetime]    = None
 
 class TaskOut(BaseModel):
-    id           : str
-    title        : str
-    description  : str
-    dept_id      : str
-    status       : TaskStatus
-    priority     : TaskPriority
-    assignee_name: Optional[str]
-    assignee_ids : Optional[str] = None   # JSON: '["id1","id2"]'
-    start_date   : Optional[datetime]
-    due_date     : Optional[datetime]
-    created_at   : datetime
-    updated_at   : datetime
-    is_hidden    : bool = False
-    hidden_at    : Optional[datetime] = None
-    reports      : list[ReportOut] = []
+    id             : str
+    title          : str
+    description    : str
+    dept_id        : str
+    department_ids : Optional[str] = None
+    status         : TaskStatus
+    priority       : TaskPriority
+    assignee_name  : Optional[str]
+    assignee_ids   : Optional[str] = None   # JSON: '["id1","id2"]'
+    start_date     : Optional[datetime]
+    due_date       : Optional[datetime]
+    created_at     : datetime
+    updated_at     : datetime
+    is_hidden      : bool = False
+    hidden_at      : Optional[datetime] = None
+    reports        : list[ReportOut] = []
 
     model_config = {"from_attributes": True}
 

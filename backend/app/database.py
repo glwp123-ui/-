@@ -38,3 +38,12 @@ async def get_db():
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # ── 컬럼 마이그레이션 (기존 DB에 없는 컬럼 추가) ──
+        from sqlalchemy import text
+        # department_ids 컬럼 추가 (없는 경우에만)
+        try:
+            await conn.execute(
+                text("ALTER TABLE tasks ADD COLUMN department_ids TEXT")
+            )
+        except Exception:
+            pass  # 이미 존재하면 무시

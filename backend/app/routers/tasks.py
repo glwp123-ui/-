@@ -50,6 +50,7 @@ async def create_task(
         title=body.title.strip(),
         description=body.description,
         dept_id=body.dept_id,
+        department_ids=body.department_ids,
         status=body.status,
         priority=body.priority,
         assignee_name=body.assignee_name,
@@ -87,6 +88,7 @@ async def update_task(
     if body.title         is not None: task.title         = body.title.strip()
     if body.description   is not None: task.description   = body.description
     if body.dept_id       is not None: task.dept_id       = body.dept_id
+    if body.department_ids is not None: task.department_ids = body.department_ids
     if body.status        is not None: task.status        = body.status
     if body.priority      is not None: task.priority      = body.priority
     if body.assignee_name is not None: task.assignee_name = body.assignee_name
