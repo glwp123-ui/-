@@ -33,13 +33,17 @@ class AuthProvider extends ChangeNotifier {
       if (token != null && token.isNotEmpty) {
         api.setToken(token);
         try {
-          final me = await api.get('/auth/me');
+          // ⚡ 8초 타임아웃: 서버 슬립 중이어도 빠르게 로그인 화면으로 이동
+          final me = await api.get('/auth/me')
+              .timeout(const Duration(seconds: 8));
           _currentUser = AppUser.fromJson(me);
-          // 전체 사용자 목록도 로드 (마스터 권한이면)
+          // 전체 사용자 목록도 로드 (마스터 권한이면) - 백그라운드
           if (_currentUser!.role == UserRole.master ||
-              _currentUser!.role == UserRole.admin) { await _loadUsers(); }
+              _currentUser!.role == UserRole.admin) {
+            _loadUsers(); // await 없이 백그라운드 실행
+          }
         } catch (_) {
-          // 토큰 만료 → 클리어
+          // 토큰 만료 또는 서버 응답 없음 → 로그인 화면으로
           api.setToken(null);
           await p.remove(_kToken);
           await p.remove(_kUserId);

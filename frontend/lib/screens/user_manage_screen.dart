@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/user_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/app_provider.dart';
+import '../services/api_service.dart';
 import '../utils/notion_theme.dart';
 
 class UserManageScreen extends StatefulWidget {
@@ -13,13 +14,36 @@ class UserManageScreen extends StatefulWidget {
 }
 
 class _UserManageScreenState extends State<UserManageScreen> {
+  bool _isLoading = true;
+  List<AppUser> _users = [];
+  String? _errorMsg;
+
   @override
   void initState() {
     super.initState();
-    // 화면 진입 시 항상 최신 유저 목록 로드
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AuthProvider>().reloadUsers();
-    });
+    _loadUsers();
+  }
+
+  // API 직접 호출 - Provider 캐시 우회
+  Future<void> _loadUsers() async {
+    if (!mounted) return;
+    setState(() { _isLoading = true; _errorMsg = null; });
+    try {
+      final data = await api.getUsers();
+      if (!mounted) return;
+      setState(() {
+        _users = data.map((u) => AppUser.fromJson(u as Map<String, dynamic>)).toList();
+        _isLoading = false;
+      });
+      // AuthProvider도 동기화
+      if (mounted) context.read<AuthProvider>().reloadUsers();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMsg = '계정 목록을 불러오지 못했습니다.\n$e';
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -61,19 +85,82 @@ class _UserManageScreenState extends State<UserManageScreen> {
         ],
         bottom: const PreferredSize(preferredSize: Size.fromHeight(1), child: Divider(height: 1)),
       ),
-      body: Consumer<AuthProvider>(
-        builder: (context, auth, _) {
-          final users = auth.users;
+      body: Builder(
+        builder: (context) {
+          // 로딩 중
+          if (_isLoading) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('계정 목록 불러오는 중...',
+                    style: TextStyle(color: NotionTheme.textSecondary, fontSize: 14)),
+                ],
+              ),
+            );
+          }
+          // 오류
+          if (_errorMsg != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                  const SizedBox(height: 12),
+                  Text(_errorMsg!, textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _loadUsers,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('다시 시도'),
+                  ),
+                ],
+              ),
+            );
+          }
+          final users = _users;
           if (users.isEmpty) {
-            return const Center(child: Text('등록된 계정이 없습니다'));
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('등록된 계정이 없습니다',
+                    style: TextStyle(color: NotionTheme.textSecondary)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadUsers,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('새로고침'),
+                  ),
+                ],
+              ),
+            );
           }
 
           // 역할 순서: master → admin → user
+          final auth = context.read<AuthProvider>();
           final sorted = [...users]..sort((a, b) => a.role.index.compareTo(b.role.index));
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // 새로고침 버튼
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('전체 ${users.length}명',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                      color: NotionTheme.textSecondary)),
+                  TextButton.icon(
+                    onPressed: _loadUsers,
+                    icon: const Icon(Icons.refresh, size: 15),
+                    label: const Text('새로고침', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ),
               // 역할별 설명 카드
               _RoleSummaryCard(),
               const SizedBox(height: 20),
@@ -113,7 +200,10 @@ class _UserManageScreenState extends State<UserManageScreen> {
         ],
         child: _UserFormSheet(editUser: user),
       ),
-    );
+    ).then((_) {
+      // BottomSheet가 닫힌 후 목록 자동 갱신
+      if (mounted) _loadUsers();
+    });
   }
 
   void _confirmDelete(BuildContext context, AuthProvider auth, AppUser user) {
@@ -148,6 +238,9 @@ class _UserManageScreenState extends State<UserManageScreen> {
               if (err != null && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text(err), backgroundColor: Colors.red));
+              } else {
+                // 삭제 성공 후 목록 갱신
+                _loadUsers();
               }
             },
             style: ElevatedButton.styleFrom(
@@ -169,6 +262,9 @@ class _UserManageScreenState extends State<UserManageScreen> {
     if (err != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(err), backgroundColor: Colors.red));
+    } else {
+      // 상태 변경 성공 후 목록 갱신
+      _loadUsers();
     }
   }
 }
