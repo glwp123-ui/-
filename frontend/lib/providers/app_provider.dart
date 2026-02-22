@@ -15,6 +15,17 @@ class AppProvider extends ChangeNotifier {
   bool     _isLoading     = false;
   String?  _error;
 
+  // ── 현재 로그인 사용자 정보 (담당자 필터링용) ───────
+  String?  _currentUserName;  // displayName
+  bool     _isAdminOrAbove = true; // master/admin → 전체 보기, user → 본인 업무만
+
+  /// AuthProvider에서 로그인 정보가 바뀔 때 호출
+  void setCurrentUser(String? displayName, bool isAdminOrAbove) {
+    _currentUserName  = displayName;
+    _isAdminOrAbove   = isAdminOrAbove;
+    notifyListeners();
+  }
+
   // ── Getters ───────────────────────────────────────
   List<Department> get departments   => _departments;
   List<Task>       get tasks         => _tasks;
@@ -35,33 +46,50 @@ class AppProvider extends ChangeNotifier {
   String get currentPageEmoji =>
       _selectedDeptId == null ? '🏠' : (selectedDept?.emoji ?? '📁');
 
+  // ── 담당자 필터 헬퍼 ─────────────────────────────
+  /// user 역할이면 자신이 담당자이거나 담당자 미지정(assignee null) 업무만 표시
+  /// master/admin은 전체 표시
+  bool _passesUserFilter(Task t) {
+    if (_isAdminOrAbove) return true;
+    if (_currentUserName == null) return true;
+    // 담당자가 없으면 모든 사람에게 보임
+    if (t.assigneeName == null || t.assigneeName!.isEmpty) return true;
+    // 담당자가 있으면 본인 이름이 포함된 경우만 보임
+    return t.assigneeName! == _currentUserName;
+  }
+
   // ── 필터링 ────────────────────────────────────────
   List<Task> getTasksByStatus(TaskStatus status, {String? deptId}) {
     final id = deptId ?? _selectedDeptId;
     return _tasks.where((t) {
       if (id != null && t.departmentId != id) return false;
-      return t.status == status;
+      if (t.status != status) return false;
+      return _passesUserFilter(t);
     }).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
   List<Task> getAllFilteredTasks({String? deptId}) {
     final id = deptId ?? _selectedDeptId;
     return _tasks
-        .where((t) => id == null || t.departmentId == id)
+        .where((t) {
+          if (id != null && t.departmentId != id) return false;
+          return _passesUserFilter(t);
+        })
         .toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
 
-  // ── 통계 ─────────────────────────────────────────
-  int get totalAll        => _tasks.length;
-  int get totalNotStarted => _tasks.where((t) => t.status == TaskStatus.notStarted).length;
-  int get totalInProgress => _tasks.where((t) => t.status == TaskStatus.inProgress).length;
-  int get totalDone       => _tasks.where((t) => t.status == TaskStatus.done).length;
-  int get totalOverdue    => _tasks.where((t) => t.isOverdue).length;
+  // ── 통계 (담당자 필터 적용) ──────────────────────────
+  List<Task> get _visibleTasks => _tasks.where(_passesUserFilter).toList();
+  int get totalAll        => _visibleTasks.length;
+  int get totalNotStarted => _visibleTasks.where((t) => t.status == TaskStatus.notStarted).length;
+  int get totalInProgress => _visibleTasks.where((t) => t.status == TaskStatus.inProgress).length;
+  int get totalDone       => _visibleTasks.where((t) => t.status == TaskStatus.done).length;
+  int get totalOverdue    => _visibleTasks.where((t) => t.isOverdue).length;
 
   int deptCount(String id, TaskStatus s) =>
-      _tasks.where((t) => t.departmentId == id && t.status == s).length;
+      _visibleTasks.where((t) => t.departmentId == id && t.status == s).length;
   int deptTotal(String id) =>
-      _tasks.where((t) => t.departmentId == id).length;
+      _visibleTasks.where((t) => t.departmentId == id).length;
 
   Department? getDeptById(String id) {
     try { return _departments.firstWhere((d) => d.id == id); }
