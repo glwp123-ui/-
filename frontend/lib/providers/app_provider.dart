@@ -18,9 +18,8 @@ class AppProvider extends ChangeNotifier {
   // ── 현재 로그인 사용자 정보 (담당자 필터링용) ───────
   String?  _currentUserName;  // displayName
   String?  _currentUserId;    // user id
-  bool     _isAdminOrAbove = true; // master/admin → 전체 보기, user → 본인 업무만
+  bool     _isAdminOrAbove = true;
 
-  /// AuthProvider에서 로그인 정보가 바뀔 때 호출
   void setCurrentUser(String? displayName, bool isAdminOrAbove, {String? userId}) {
     _currentUserName  = displayName;
     _currentUserId    = userId;
@@ -51,21 +50,13 @@ class AppProvider extends ChangeNotifier {
   // ── 담당자 필터 헬퍼 ─────────────────────────────
   /// user 역할이면 자신이 담당자이거나 담당자 미지정(assignee null) 업무만 표시
   /// master/admin은 전체 표시
+  /// user 역할: 자신이 assigneeNames에 포함되거나 담당자 미지정 업무만 표시
   bool _passesUserFilter(Task t) {
     if (_isAdminOrAbove) return true;
     // 담당자 없으면 모두에게 보임
-    final hasIds  = t.assigneeIds.isNotEmpty;
-    final hasName = t.assigneeName != null && t.assigneeName!.isNotEmpty;
-    if (!hasIds && !hasName) return true;
-    // assigneeIds 리스트에 현재 유저 ID 포함 여부
-    if (_currentUserId != null && hasIds) {
-      return t.assigneeIds.contains(_currentUserId);
-    }
-    // ID 없을 경우 이름으로 fallback
-    if (_currentUserName != null && hasName) {
-      return t.assigneeName! == _currentUserName;
-    }
-    return true;
+    if (t.assigneeNames.isEmpty) return true;
+    if (_currentUserName == null) return true;
+    return t.assigneeNames.contains(_currentUserName);
   }
 
   // ── 필터링 ────────────────────────────────────────
@@ -184,17 +175,17 @@ class AppProvider extends ChangeNotifier {
     TaskPriority priority = TaskPriority.medium,
     DateTime? startDate,
     DateTime? dueDate,
-    String? assigneeName,
-    List<String>? assigneeIds,
+    List<String>? assigneeNames,
   }) async {
-    final ids = assigneeIds ?? [];
+    final names = assigneeNames ?? [];
+    final namesJson = '[${names.map((n) => '"${n.replaceAll('"', '')}"').join(',')}]';
     final data = await api.createTask({
       'title': title, 'description': description,
       'dept_id': departmentId,
       'status':   status.name,
       'priority': priority.name,
-      if (assigneeName != null && assigneeName.isNotEmpty) 'assignee_name': assigneeName,
-      'assignee_ids': '[${ids.map((e) => '"$e"').join(',')}]',
+      if (names.isNotEmpty) 'assignee_name': names.first,
+      'assignee_ids': namesJson,
       if (startDate != null) 'start_date': startDate.toIso8601String(),
       if (dueDate   != null) 'due_date':   dueDate.toIso8601String(),
     });
@@ -203,14 +194,15 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> updateTask(Task t) async {
-    final ids = t.assigneeIds;
+    final names = t.assigneeNames;
+    final namesJson = '[${names.map((n) => '"${n.replaceAll('"', '')}"').join(',')}]';
     final data = await api.updateTask(t.id, {
       'title': t.title, 'description': t.description,
       'dept_id': t.departmentId,
       'status':   t.status.name,
       'priority': t.priority.name,
-      'assignee_name': t.assigneeName,
-      'assignee_ids': '[${ids.map((e) => '"$e"').join(',')}]',
+      'assignee_name': names.isNotEmpty ? names.first : null,
+      'assignee_ids': namesJson,
       if (t.startDate != null) 'start_date': t.startDate!.toIso8601String(),
       if (t.dueDate   != null) 'due_date':   t.dueDate!.toIso8601String(),
     });

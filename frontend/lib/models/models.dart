@@ -136,8 +136,7 @@ class Task {
   DateTime createdAt;
   DateTime? startDate;  // 일정 시작일 (달력에 표시)
   DateTime? dueDate;
-  String? assigneeName;
-  List<String> assigneeIds;  // 다중 담당자 ID 목록
+  List<String> assigneeNames;  // 다중 담당자 이름 목록
   List<TaskReport> reports; // 중간 보고 목록
   bool isHidden;            // 보드에서 숨김 (보관함엔 유지)
   DateTime? hiddenAt;       // 숨긴 일시
@@ -152,13 +151,15 @@ class Task {
     required this.createdAt,
     this.startDate,
     this.dueDate,
-    this.assigneeName,
-    List<String>? assigneeIds,
+    List<String>? assigneeNames,
     List<TaskReport>? reports,
     this.isHidden = false,
     this.hiddenAt,
-  }) : assigneeIds = assigneeIds ?? [],
+  }) : assigneeNames = assigneeNames ?? [],
        reports = reports ?? [];
+
+  /// 하위 호환: 첫 번째 담당자 이름 (단일 담당자 표시용)
+  String? get assigneeName => assigneeNames.isNotEmpty ? assigneeNames.first : null;
 
   bool get isOverdue =>
       dueDate != null && status != TaskStatus.done && DateTime.now().isAfter(dueDate!);
@@ -178,23 +179,21 @@ class Task {
     'departmentId': departmentId, 'status': status.index,
     'priority': priority.index, 'createdAt': createdAt.toIso8601String(),
     'startDate': startDate?.toIso8601String(),
-    'dueDate': dueDate?.toIso8601String(), 'assigneeName': assigneeName,
-    'assigneeIds': assigneeIds,
+    'dueDate': dueDate?.toIso8601String(),
+    'assigneeNames': assigneeNames,
     'reports': reports.map((r) => r.toJson()).toList(),
   };
 
-  static List<String> _parseAssigneeIds(dynamic raw) {
+  static List<String> _parseNames(dynamic raw) {
     if (raw == null) return [];
-    if (raw is List) return raw.map((e) => e.toString()).toList();
+    if (raw is List) return raw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
     if (raw is String && raw.isNotEmpty) {
       try {
-        // JSON 문자열인 경우 파싱
         if (raw.startsWith('[')) {
-          final decoded = raw
+          return raw
               .replaceAll('[', '').replaceAll(']', '')
               .replaceAll('"', '').replaceAll("'", '')
               .split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-          return decoded;
         }
       } catch (_) {}
     }
@@ -226,8 +225,7 @@ class Task {
       dueDate:    (j['due_date'] ?? j['dueDate']) != null
           ? DateTime.parse(j['due_date'] ?? j['dueDate'])
           : null,
-      assigneeName: j['assignee_name'] ?? j['assigneeName'],
-      assigneeIds: _parseAssigneeIds(j['assignee_ids'] ?? j['assigneeIds']),
+      assigneeNames: _parseNames(j['assignee_ids'] ?? j['assigneeNames']),
       reports: j['reports'] != null
           ? (j['reports'] as List).map((r) => TaskReport.fromJson(r)).toList()
           : [],

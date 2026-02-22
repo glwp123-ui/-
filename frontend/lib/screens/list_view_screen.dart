@@ -208,14 +208,9 @@ class _ListRowState extends State<_ListRow> {
                   : const SizedBox.shrink(),
               ),
 
-              // 담당자
-              widget.task.assigneeName != null
-                ? CircleAvatar(
-                    radius: 11,
-                    backgroundColor: NotionTheme.accentLight,
-                    child: Text(widget.task.assigneeName![0],
-                      style: const TextStyle(fontSize: 10, color: NotionTheme.accent, fontWeight: FontWeight.bold)),
-                  )
+              // 담당자 (여러 명 아바타)
+              widget.task.assigneeNames.isNotEmpty
+                ? _MiniAssigneeAvatars(names: widget.task.assigneeNames)
                 : const SizedBox(width: 22),
             ],
           ),
@@ -227,5 +222,47 @@ class _ListRowState extends State<_ListRow> {
   void _cycleStatus(BuildContext context, AppProvider provider) {
     final next = TaskStatus.values[(widget.task.status.index + 1) % TaskStatus.values.length];
     provider.updateTaskStatus(widget.task.id, next);
+  }
+}
+
+// ── 미니 담당자 아바타 (리스트뷰용) ─────────────────
+class _MiniAssigneeAvatars extends StatelessWidget {
+  final List<String> names;
+  const _MiniAssigneeAvatars({required this.names});
+
+  static const _colors = [
+    Color(0xFF2383E2), Color(0xFF0F7B6C), Color(0xFF6C5FD4),
+    Color(0xFFEB5757), Color(0xFFCB912F), Color(0xFF4CAF50),
+    Color(0xFF9C27B0), Color(0xFF00796B),
+  ];
+
+  Color _c(String n) => n.isEmpty ? _colors[0] : _colors[n.codeUnitAt(0) % _colors.length];
+
+  @override
+  Widget build(BuildContext context) {
+    final show = names.length > 2 ? 2 : names.length;
+    final extra = names.length - 2;
+    return SizedBox(
+      width: show * 12.0 + (extra > 0 ? 16 : 0),
+      height: 22,
+      child: Stack(
+        children: [
+          for (int i = 0; i < show; i++)
+            Positioned(
+              left: i * 12.0,
+              child: CircleAvatar(radius: 11, backgroundColor: _c(names[i]),
+                child: Text(names[i].isNotEmpty ? names[i][0] : '?',
+                  style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold))),
+            ),
+          if (extra > 0)
+            Positioned(
+              left: 2 * 12.0,
+              child: CircleAvatar(radius: 11, backgroundColor: const Color(0xFF9E9E9E),
+                child: Text('+$extra',
+                  style: const TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.bold))),
+            ),
+        ],
+      ),
+    );
   }
 }
