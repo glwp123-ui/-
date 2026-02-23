@@ -1,74 +1,66 @@
 """
 PostgreSQL (Supabase) + SQLAlchemy 비동기 DB 설정
-- Supabase Transaction Pooler: asyncpg creator 방식으로 statement_cache_size=0 강제 적용
+- Supabase Session Pooler (포트 5432) 사용 - prepared statement 문제 없음
+- Transaction Pooler (포트 6543)은 asyncpg와 호환 안 됨 → Session Pooler로 변경
 """
 import os
 import logging
-import asyncpg
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
 
-def _get_conn_params() -> dict:
+def _build_database_url() -> str:
+    """
+    DATABASE_URL 환경변수 우선 사용.
+    없으면 Supabase Session Pooler URL (포트 5432) 사용.
+    
+    ⚠️ 중요: Transaction Pooler (포트 6543) → Session Pooler (포트 5432)로 변경
+    Session Pooler는 prepared statement를 지원하므로 asyncpg와 호환됨.
+    """
     raw_url = os.environ.get("DATABASE_URL", "").strip()
 
-    if not raw_url:
+    if raw_url:
+        logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
+    else:
+        # Session Pooler: 포트 5432 사용 (Transaction Pooler 6543 아님!)
         raw_url = (
             "postgresql://"
             "postgres.prmebctnnphastindsjk:Songwork2025!@"
-            "aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres"
+            "aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres"
         )
-        logger.info("✅ PostgreSQL - Supabase 하드코딩 URL 사용")
-    else:
-        raw_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
-        raw_url = raw_url.replace("postgres://", "postgresql://", 1)
-        logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
+        logger.info("✅ PostgreSQL - Supabase Session Pooler URL 사용 (포트 5432)")
 
-    # postgresql://user:pass@host:port/db 파싱
-    from urllib.parse import urlparse
-    p = urlparse(raw_url)
-    return {
-        "host": p.hostname,
-        "port": p.port or 5432,
-        "user": p.username,
-        "password": p.password,
-        "database": p.path.lstrip("/"),
-    }
+    # scheme 변환: asyncpg 드라이버용
+    if raw_url.startswith("postgres://"):
+        raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif raw_url.startswith("postgresql://"):
+        raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif not raw_url.startswith("postgresql+asyncpg://"):
+        raw_url = "postgresql+asyncpg://" + raw_url.split("://", 1)[-1]
+
+    return raw_url
 
 
-_PARAMS = _get_conn_params()
+DATABASE_URL = _build_database_url()
 
-# SQLAlchemy용 dummy URL (실제 연결은 creator 함수가 처리)
-_DUMMY_URL = (
-    f"postgresql+asyncpg://{_PARAMS['user']}:{_PARAMS['password']}"
-    f"@{_PARAMS['host']}:{_PARAMS['port']}/{_PARAMS['database']}"
-)
-DATABASE_URL = _DUMMY_URL
-
-
-async def _creator():
-    """statement_cache_size=0 강제 적용한 asyncpg 연결 생성"""
-    return await asyncpg.connect(
-        host=_PARAMS["host"],
-        port=_PARAMS["port"],
-        user=_PARAMS["user"],
-        password=_PARAMS["password"],
-        database=_PARAMS["database"],
-        statement_cache_size=0,
-    )
-
-
+# Session Pooler는 prepared statement 지원 → statement_cache_size=0 불필요
+# 하지만 안전을 위해 connect_args에 설정
 engine = create_async_engine(
-    "postgresql+asyncpg://",
-    async_creator=_creator,
+    DATABASE_URL,
     echo=False,
-    pool_size=3,
-    max_overflow=5,
+    pool_size=5,
+    max_overflow=10,
     pool_timeout=30,
     pool_recycle=1800,
-    pool_pre_ping=False,
+    pool_pre_ping=True,
+    connect_args={
+        "statement_cache_size": 0,  # 혹시 모를 Pooler 충돌 방지
+        "server_settings": {
+            "application_name": "songwork-api"
+        }
+    }
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
