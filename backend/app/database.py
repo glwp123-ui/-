@@ -1,7 +1,5 @@
 """
 PostgreSQL (Supabase) + SQLAlchemy 비동기 DB 설정
-- 환경변수 DATABASE_URL 로 연결 (Render 환경변수에 설정)
-- 로컬 개발: SQLite 폴백 (DATABASE_URL 없을 때)
 """
 import os
 import logging
@@ -11,41 +9,36 @@ from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
+# Supabase Transaction Pooler URL (직접 설정)
+SUPABASE_URL = "postgresql+asyncpg://postgres.prmebctnnphastindsjk:dlswo35753!@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres"
 
 def _build_database_url() -> str:
+    # 1순위: 환경변수
     raw_url = os.environ.get("DATABASE_URL", "").strip()
-
     if raw_url:
-        # postgres:// → postgresql+asyncpg://
         if raw_url.startswith("postgres://"):
             raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
             raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        logger.info(f"✅ PostgreSQL(Supabase) 사용")
+        logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
         return raw_url
 
-    # 로컬 SQLite 폴백
-    local_path = Path(__file__).parent.parent / "data" / "songwork.db"
-    local_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"ℹ️ SQLite 폴백 사용: {local_path}")
-    return f"sqlite+aiosqlite:///{local_path}"
+    # 2순위: Supabase 직접 설정
+    logger.info("✅ PostgreSQL - Supabase 직접 연결 사용")
+    return SUPABASE_URL
 
 
-# 매 요청마다 환경변수를 다시 읽지 않고 시작 시 한 번만 결정
 DATABASE_URL = _build_database_url()
 
-if "postgresql" in DATABASE_URL:
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_timeout=30,
-        pool_recycle=1800,
-        pool_pre_ping=True,
-    )
-else:
-    engine = create_async_engine(DATABASE_URL, echo=False)
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    pool_timeout=30,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+)
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
