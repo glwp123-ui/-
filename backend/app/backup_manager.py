@@ -1,9 +1,10 @@
 """
 데이터 영속성 관리 모듈
 - Render 재배포 시 DB 초기화 문제 해결
-- 전략: DB 데이터를 JSON 파일로 로컬 저장 (/data/backup.json)
-  + 서버 시작 시 백업 파일 있으면 자동 복원 (시드 데이터 덮어쓰기)
-- /data 디렉토리가 없으면 /tmp/backup.json 사용 (임시)
+- 전략:
+  1. 서버 시작 시: 코드와 함께 커밋된 data/backup.json을 읽어서 복원
+  2. 데이터 변경 시: 코드 디렉토리 내 data/backup.json에 자동 저장
+  3. GitHub에 backup.json을 주기적으로 커밋하면 재배포 후에도 데이터 유지
 """
 import json
 import os
@@ -19,14 +20,10 @@ logger = logging.getLogger(__name__)
 
 # 백업 파일 경로 결정
 def _get_backup_path() -> Path:
-    # Render Persistent Disk 마운트 경로
-    data_dir = Path("/data")
-    if data_dir.exists() and os.access(str(data_dir), os.W_OK):
-        return data_dir / "backup.json"
-    # 로컬 개발 환경
-    local_dir = Path(__file__).parent.parent / "data"
-    local_dir.mkdir(parents=True, exist_ok=True)
-    return local_dir / "backup.json"
+    # 코드 디렉토리 내 data/ 폴더 (GitHub에 커밋 가능)
+    code_data_dir = Path(__file__).parent.parent / "data"
+    code_data_dir.mkdir(parents=True, exist_ok=True)
+    return code_data_dir / "backup.json"
 
 BACKUP_PATH = _get_backup_path()
 
