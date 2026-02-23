@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase
 logger = logging.getLogger(__name__)
 
 # Supabase Transaction Pooler URL (직접 설정)
-SUPABASE_URL = "postgresql+asyncpg://postgres.prmebctnnphastindsjk:dlswo35753!@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres"
+SUPABASE_URL = "postgresql+asyncpg://postgres.prmebctnnphastindsjk:dlswo35753!@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres"
 
 def _build_database_url() -> str:
     # 1순위: 환경변수
