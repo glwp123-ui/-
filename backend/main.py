@@ -121,6 +121,19 @@ app.include_router(daily_records_router)
 app.include_router(backup_router)
 
 
+
+@app.get("/debug-env")
+async def debug_env():
+    import os
+    db_url = os.environ.get("DATABASE_URL", "NOT_SET")
+    all_env_keys = [k for k in os.environ.keys()]
+    return {
+        "DATABASE_URL_SET": db_url != "NOT_SET",
+        "DATABASE_URL_PREFIX": db_url[:40] if db_url != "NOT_SET" else "NOT_SET",
+        "env_keys_count": len(all_env_keys),
+        "has_db_related": [k for k in all_env_keys if "DB" in k or "DATABASE" in k or "POSTGRES" in k],
+    }
+
 @app.get("/health")
 async def health():
     import os
