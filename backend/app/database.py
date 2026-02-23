@@ -1,6 +1,6 @@
 """
 PostgreSQL (Supabase) + SQLAlchemy 비동기 DB 설정
-- Supabase Transaction Pooler: statement_cache_size=0 필수
+- Supabase Transaction Pooler: asyncpg creator 방식으로 statement_cache_size=0 강제 적용
 """
 import os
 import logging
@@ -11,8 +11,9 @@ from sqlalchemy.orm import DeclarativeBase
 logger = logging.getLogger(__name__)
 
 
-def _get_dsn() -> str:
+def _get_conn_params() -> dict:
     raw_url = os.environ.get("DATABASE_URL", "").strip()
+
     if not raw_url:
         raw_url = (
             "postgresql://"
@@ -21,36 +22,53 @@ def _get_dsn() -> str:
         )
         logger.info("✅ PostgreSQL - Supabase 하드코딩 URL 사용")
     else:
-        # postgres:// 또는 postgresql+asyncpg:// → postgresql://
         raw_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
         raw_url = raw_url.replace("postgres://", "postgresql://", 1)
         logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
-    return raw_url
+
+    # postgresql://user:pass@host:port/db 파싱
+    from urllib.parse import urlparse
+    p = urlparse(raw_url)
+    return {
+        "host": p.hostname,
+        "port": p.port or 5432,
+        "user": p.username,
+        "password": p.password,
+        "database": p.path.lstrip("/"),
+    }
 
 
-DSN = _get_dsn()
-# SQLAlchemy용 URL (postgresql+asyncpg://)
-DATABASE_URL = DSN.replace("postgresql://", "postgresql+asyncpg://", 1)
+_PARAMS = _get_conn_params()
+
+# SQLAlchemy용 dummy URL (실제 연결은 creator 함수가 처리)
+_DUMMY_URL = (
+    f"postgresql+asyncpg://{_PARAMS['user']}:{_PARAMS['password']}"
+    f"@{_PARAMS['host']}:{_PARAMS['port']}/{_PARAMS['database']}"
+)
+DATABASE_URL = _DUMMY_URL
 
 
-async def _asyncpg_connect(host, port, user, password, database, **kwargs):
-    """statement_cache_size=0 강제 적용"""
+async def _creator():
+    """statement_cache_size=0 강제 적용한 asyncpg 연결 생성"""
     return await asyncpg.connect(
-        host=host, port=port, user=user,
-        password=password, database=database,
+        host=_PARAMS["host"],
+        port=_PARAMS["port"],
+        user=_PARAMS["user"],
+        password=_PARAMS["password"],
+        database=_PARAMS["database"],
         statement_cache_size=0,
     )
 
 
 engine = create_async_engine(
-    DATABASE_URL,
+    "postgresql+asyncpg://",
+    async_creator=_creator,
     echo=False,
     pool_size=3,
     max_overflow=5,
     pool_timeout=30,
     pool_recycle=1800,
     pool_pre_ping=False,
-    connect_args={"statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
