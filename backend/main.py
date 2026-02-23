@@ -1,11 +1,7 @@
 """
 song work - FastAPI 백엔드 서버
-포트: 8000
-DB : SQLite (data/songwork.db)
-
-데이터 영속성:
-- 시작 시 backup.json이 있으면 자동 복원 (Render 재배포 대응)
-- 데이터 변경 시 자동 백업 (/data/backup.json 또는 로컬)
+포트: 8080 (Fly.io)
+DB : PostgreSQL (Supabase)
 """
 import asyncio
 import logging
@@ -122,34 +118,12 @@ app.include_router(backup_router)
 
 
 
-@app.get("/debug-env")
-async def debug_env():
-    import os
-    db_url = os.environ.get("DATABASE_URL", "NOT_SET")
-    all_env_keys = [k for k in os.environ.keys()]
-    return {
-        "DATABASE_URL_SET": db_url != "NOT_SET",
-        "DATABASE_URL_PREFIX": db_url[:40] if db_url != "NOT_SET" else "NOT_SET",
-        "env_keys_count": len(all_env_keys),
-        "has_db_related": [k for k in all_env_keys if "DB" in k or "DATABASE" in k or "POSTGRES" in k],
-    }
-
 @app.get("/health")
 async def health():
-    import os
     from app.database import DATABASE_URL
-    # 실제 환경변수도 같이 확인 (디버그용)
-    env_db_url = os.environ.get("DATABASE_URL", "")
     db_type = "postgresql" if "postgresql" in DATABASE_URL else "sqlite"
-    info = {
+    return {
         "status": "ok",
         "service": "song work API",
         "db_type": db_type,
-        "env_db_set": bool(env_db_url),
-        "db_url_prefix": DATABASE_URL[:30] if DATABASE_URL else "none",
     }
-    if db_type == "sqlite":
-        from app.backup_manager import BACKUP_PATH
-        info["backup_exists"] = BACKUP_PATH.exists()
-        info["backup_size_bytes"] = BACKUP_PATH.stat().st_size if BACKUP_PATH.exists() else 0
-    return info

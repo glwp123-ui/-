@@ -1,31 +1,37 @@
 """
 PostgreSQL (Supabase) + SQLAlchemy 비동기 DB 설정
+- 환경변수 DATABASE_URL 우선 사용
+- 없으면 하드코딩 fallback
 """
 import os
 import logging
-from pathlib import Path
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
 
-# Supabase Transaction Pooler URL (직접 설정)
-SUPABASE_URL = "postgresql+asyncpg://postgres.prmebctnnphastindsjk:dlswo35753!@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres"
-
+# ── DB URL 결정 ───────────────────────────────────────────
 def _build_database_url() -> str:
-    # 1순위: 환경변수
     raw_url = os.environ.get("DATABASE_URL", "").strip()
-    if raw_url:
-        if raw_url.startswith("postgres://"):
-            raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
-        elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
-            raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
+
+    if not raw_url:
+        # 환경변수 없으면 하드코딩 fallback (Supabase Transaction Pooler)
+        raw_url = (
+            "postgresql+asyncpg://"
+            "postgres.prmebctnnphastindsjk:dlswo35753!@"
+            "aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres"
+        )
+        logger.info("✅ PostgreSQL - Supabase 하드코딩 URL 사용")
         return raw_url
 
-    # 2순위: Supabase 직접 설정
-    logger.info("✅ PostgreSQL - Supabase 직접 연결 사용")
-    return SUPABASE_URL
+    # postgres:// → postgresql+asyncpg:// 변환
+    if raw_url.startswith("postgres://"):
+        raw_url = raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif raw_url.startswith("postgresql://") and "+asyncpg" not in raw_url:
+        raw_url = raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    logger.info("✅ PostgreSQL - 환경변수 DATABASE_URL 사용")
+    return raw_url
 
 
 DATABASE_URL = _build_database_url()
