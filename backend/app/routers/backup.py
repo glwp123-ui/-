@@ -13,6 +13,7 @@ from sqlalchemy import select, delete
 from ..database import get_db
 from ..models import User, Department, Task, Report, UserRole, TaskStatus, TaskPriority
 from ..auth import get_current_user, require_master
+from ..backup_manager import save_backup
 
 router = APIRouter(prefix="/backup", tags=["backup"])
 
@@ -201,4 +202,23 @@ async def import_all(
         stats["reports"] += 1
 
     await db.commit()
+    # 복원 후 즉시 백업 파일 갱신
+    await save_backup(db)
     return {"ok": True, "restored": stats}
+
+
+# ── 현재 DB를 파일로 즉시 저장 ────────────────────────
+@router.post("/save")
+async def save_now(
+    _master: User = Depends(require_master),
+    db: AsyncSession = Depends(get_db),
+):
+    """현재 DB 상태를 backup.json 파일로 즉시 저장 (master 전용)"""
+    from ..backup_manager import BACKUP_PATH
+    ok = await save_backup(db)
+    return {
+        "ok": ok,
+        "backup_file": str(BACKUP_PATH),
+        "backup_exists": BACKUP_PATH.exists(),
+        "backup_size_bytes": BACKUP_PATH.stat().st_size if BACKUP_PATH.exists() else 0,
+    }
