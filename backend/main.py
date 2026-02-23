@@ -123,12 +123,17 @@ app.include_router(backup_router)
 
 @app.get("/health")
 async def health():
+    import os
     from app.database import DATABASE_URL
+    # 실제 환경변수도 같이 확인 (디버그용)
+    env_db_url = os.environ.get("DATABASE_URL", "")
     db_type = "postgresql" if "postgresql" in DATABASE_URL else "sqlite"
     info = {
         "status": "ok",
         "service": "song work API",
         "db_type": db_type,
+        "env_db_set": bool(env_db_url),
+        "db_url_prefix": DATABASE_URL[:30] if DATABASE_URL else "none",
     }
     if db_type == "sqlite":
         from app.backup_manager import BACKUP_PATH
