@@ -9,5 +9,3 @@ services:
         value: 3.12.0
       - key: SECRET_KEY
         generateValue: true
-      - key: DATABASE_URL
-        sync: false   # Render 대시보드에서 직접 입력
