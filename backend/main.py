@@ -43,13 +43,15 @@ async def _auto_save_scheduler():
         except Exception as e:
             logger.error(f"[auto-save] 오류: {e}")
 
-        # 자정마다 백업도 저장
-        try:
-            async with AsyncSessionLocal() as db:
-                await save_backup(db)
-                logger.info("[auto-backup] 자정 자동 백업 완료")
-        except Exception as e:
-            logger.error(f"[auto-backup] 오류: {e}")
+        # 자정마다 백업 저장 (SQLite 환경에서만)
+        from app.database import DATABASE_URL as _DB_URL
+        if "postgresql" not in _DB_URL:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await save_backup(db)
+                    logger.info("[auto-backup] 자정 자동 백업 완료")
+            except Exception as e:
+                logger.error(f"[auto-backup] 오류: {e}")
 
 
 @asynccontextmanager
@@ -61,27 +63,32 @@ async def lifespan(app: FastAPI):
         # 2. 시드 데이터 (DB가 완전히 비어있을 때만)
         await seed_if_empty(db)
 
-    # 3. 백업 파일이 있으면 복원 (시드 데이터 덮어쓰기)
-    #    → Render 재배포 후에도 기존 데이터 유지
-    async with AsyncSessionLocal() as db:
-        restored = await restore_from_backup(db)
-        if restored:
-            logger.info("✅ 백업에서 데이터 복원 완료")
-        else:
-            logger.info("ℹ️ 백업 없음 - 시드 데이터로 시작")
+    # 3. SQLite 환경에서만 backup.json 복원 (PostgreSQL은 DB 자체가 영구 저장)
+    from app.database import DATABASE_URL
+    if "postgresql" not in DATABASE_URL:
+        async with AsyncSessionLocal() as db:
+            restored = await restore_from_backup(db)
+            if restored:
+                logger.info("✅ 백업에서 데이터 복원 완료")
+            else:
+                logger.info("ℹ️ 백업 없음 - 시드 데이터로 시작")
+    else:
+        logger.info("✅ PostgreSQL(Supabase) 사용 중 - 백업 복원 불필요")
 
     # 4. 스케줄러 시작
     task = asyncio.create_task(_auto_save_scheduler())
 
     yield
 
-    # 종료 시 백업 저장
-    try:
-        async with AsyncSessionLocal() as db:
-            await save_backup(db)
-            logger.info("✅ 종료 전 백업 저장 완료")
-    except Exception as e:
-        logger.error(f"종료 백업 오류: {e}")
+    # 종료 시 백업 저장 (SQLite 환경에서만)
+    from app.database import DATABASE_URL
+    if "postgresql" not in DATABASE_URL:
+        try:
+            async with AsyncSessionLocal() as db:
+                await save_backup(db)
+                logger.info("✅ 종료 전 백업 저장 완료")
+        except Exception as e:
+            logger.error(f"종료 백업 오류: {e}")
 
     task.cancel()
     try:
@@ -116,13 +123,15 @@ app.include_router(backup_router)
 
 @app.get("/health")
 async def health():
-    from app.backup_manager import BACKUP_PATH
-    backup_exists = BACKUP_PATH.exists()
-    backup_size = BACKUP_PATH.stat().st_size if backup_exists else 0
-    return {
+    from app.database import DATABASE_URL
+    db_type = "postgresql" if "postgresql" in DATABASE_URL else "sqlite"
+    info = {
         "status": "ok",
         "service": "song work API",
-        "backup_file": str(BACKUP_PATH),
-        "backup_exists": backup_exists,
-        "backup_size_bytes": backup_size,
+        "db_type": db_type,
     }
+    if db_type == "sqlite":
+        from app.backup_manager import BACKUP_PATH
+        info["backup_exists"] = BACKUP_PATH.exists()
+        info["backup_size_bytes"] = BACKUP_PATH.stat().st_size if BACKUP_PATH.exists() else 0
+    return info

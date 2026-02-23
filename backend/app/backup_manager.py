@@ -1,10 +1,7 @@
 """
 데이터 영속성 관리 모듈
-- Render 재배포 시 DB 초기화 문제 해결
-- 전략:
-  1. 서버 시작 시: 코드와 함께 커밋된 data/backup.json을 읽어서 복원
-  2. 데이터 변경 시: 코드 디렉토리 내 data/backup.json에 자동 저장
-  3. GitHub에 backup.json을 주기적으로 커밋하면 재배포 후에도 데이터 유지
+- PostgreSQL(Supabase) 사용 시: DB 자체가 영구 저장 → backup.json은 비상용
+- SQLite 사용 시: backup.json으로 재배포 대비 (로컬/임시 환경)
 """
 import json
 import os
