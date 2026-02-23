@@ -18,7 +18,7 @@ def _build_database_url() -> str:
         # 환경변수 없으면 하드코딩 fallback (Supabase Transaction Pooler)
         raw_url = (
             "postgresql+asyncpg://"
-            "postgres.prmebctnnphastindsjk:dlswo35753!@"
+            "postgres.prmebctnnphastindsjk:Songwork2025!@"
             "aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres"
         )
         logger.info("✅ PostgreSQL - Supabase 하드코딩 URL 사용")
