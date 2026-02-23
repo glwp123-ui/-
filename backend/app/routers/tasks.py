@@ -15,6 +15,7 @@ from ..schemas import (
     DailyReportDept, DeptOut,
 )
 from ..auth import get_current_user
+from ..backup_manager import save_backup
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -67,6 +68,8 @@ async def create_task(
     result = await db.execute(
         select(Task).options(selectinload(Task.reports)).where(Task.id == task.id)
     )
+    # 데이터 변경 후 백업
+    await save_backup(db)
     return TaskOut.model_validate(result.scalar_one())
 
 
@@ -101,6 +104,8 @@ async def update_task(
     result2 = await db.execute(
         select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
     )
+    # 데이터 변경 후 백업
+    await save_backup(db)
     return TaskOut.model_validate(result2.scalar_one())
 
 
@@ -208,6 +213,8 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
     await db.delete(task)
     await db.commit()
+    # 데이터 변경 후 백업
+    await save_backup(db)
     return {"ok": True}
 
 

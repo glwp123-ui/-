@@ -9,6 +9,7 @@ from ..database import get_db
 from ..models import User, UserRole
 from ..schemas import UserCreate, UserUpdate, UserOut
 from ..auth import hash_password, get_current_user, require_master
+from ..backup_manager import save_backup
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -49,6 +50,7 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    await save_backup(db)
     return UserOut.model_validate(user)
 
 
@@ -80,6 +82,7 @@ async def update_user(
 
     await db.commit()
     await db.refresh(user)
+    await save_backup(db)
     return UserOut.model_validate(user)
 
 
@@ -107,4 +110,5 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+    await save_backup(db)
     return {"ok": True}

@@ -9,6 +9,7 @@ from ..database import get_db
 from ..models import User, Department, Task
 from ..schemas import DeptCreate, DeptUpdate, DeptOut
 from ..auth import get_current_user
+from ..backup_manager import save_backup
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
@@ -38,6 +39,7 @@ async def create_dept(
     db.add(dept)
     await db.commit()
     await db.refresh(dept)
+    await save_backup(db)
     return DeptOut.model_validate(dept)
 
 
@@ -60,6 +62,7 @@ async def update_dept(
 
     await db.commit()
     await db.refresh(dept)
+    await save_backup(db)
     return DeptOut.model_validate(dept)
 
 
@@ -76,4 +79,5 @@ async def delete_dept(
     # cascade delete-orphan 으로 관련 Task/Report 도 삭제됨
     await db.delete(dept)
     await db.commit()
+    await save_backup(db)
     return {"ok": True}
