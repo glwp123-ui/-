@@ -125,6 +125,12 @@ async def update_status(
         raise HTTPException(status_code=404, detail="업무를 찾을 수 없습니다.")
     task.status     = body.get("status", task.status)
     task.updated_at = datetime.utcnow()
+    # 완료 상태로 변경될 때 completed_at 기록
+    new_status = body.get("status", task.status)
+    if new_status == "done" and task.status != "done":
+        task.completed_at = datetime.utcnow()
+    elif new_status != "done":
+        task.completed_at = None  # 완료 취소 시 초기화
     await db.commit()
     result2 = await db.execute(
         select(Task).options(selectinload(Task.reports)).where(Task.id == task_id)
