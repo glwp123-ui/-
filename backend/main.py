@@ -16,6 +16,7 @@ from app.backup_manager import save_backup, restore_from_backup
 from app.routers  import auth, users, departments, tasks
 from app.routers.backup import router as backup_router
 from app.routers.daily_records import router as daily_records_router, _upsert_record
+from app.routers.ai import router as ai_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -115,6 +116,7 @@ app.include_router(departments.router)
 app.include_router(tasks.router)
 app.include_router(daily_records_router)
 app.include_router(backup_router)
+app.include_router(ai_router)
 
 
 
